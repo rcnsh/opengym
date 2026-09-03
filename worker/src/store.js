@@ -268,6 +268,18 @@ export class Store {
     await this.db.prepare('DELETE FROM presence WHERE updated_at < ?').bind(Date.now() - ttl).run();
   }
 
+  // takeChallenge/takePairing clear expired rows as they go, but only when something is redeemed.
+  // An abandoned ceremony — a pairing code generated and never entered, a passkey prompt dismissed
+  // — leaves a row nothing will ever read again, so the cron sweeps them too. Upstream got this
+  // from a pair of 60s setIntervals that have no equivalent here.
+  async sweepExpired() {
+    const now = Date.now();
+    await this.db.batch([
+      this.db.prepare('DELETE FROM challenges WHERE exp < ?').bind(now),
+      this.db.prepare('DELETE FROM pairings WHERE exp < ?').bind(now)
+    ]);
+  }
+
   /* ---------- audit log ---------- */
 
   async audit(rec) {

@@ -757,6 +757,7 @@ export default {
 
     // Housekeeping that upstream does on its own intervals.
     await store.sweepPresence(PRESENCE_TTL);
+    await store.sweepExpired();
     if (new Date().getUTCMinutes() === 0 && cfg.AUDIT_ON) {
       await store.compactAudit(cfg.AUDIT_MAX, cfg.AUDIT_DAYS);
     }
