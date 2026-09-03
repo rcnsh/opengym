@@ -1,3 +1,8 @@
+> **This is a modified fork.** Changed since 2026-09 to add a Cloudflare Workers deployment
+> target (`worker/`) alongside the original Docker Compose stack, which still works unchanged.
+> Upstream is [openGym by Duarte Santos](https://gitlab.com/DuarteSantos8/opengym).
+> Licensed AGPL-3.0-or-later, like upstream — see [LICENSE](LICENSE) and [worker/README.md](worker/README.md).
+
 <div align="center">
 
 <img src="assets/banner.png" alt="openGym" width="720">

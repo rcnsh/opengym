@@ -251,7 +251,12 @@ export default function Settings() {
         are running, or whether an update actually installed. */}
     <div className="dim small" style={{ textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
       openGym v{__APP_VERSION__} · {t('free & open source (AGPL v3)')}<br />
-      <a href="https://gitlab.com/DuarteSantos8/opengym" target="_blank" rel="noopener">source code</a> · exercise data: hasaneyldrm/exercises-dataset (MIT)<br />
+      {/* AGPL-3.0 §13: anyone using this over the network must be offered the Corresponding
+          Source of *this* version, not upstream's — so the first link is the fork. §5(a) also
+          wants a prominent notice that it was modified, with a date. Deliberately not run
+          through t(): a licence notice that only appears in some locales is not "prominent". */}
+      modified fork, changed 2026-09 — <a href="https://github.com/rcnsh/opengym" target="_blank" rel="noopener">source code for this version</a><br />
+      upstream: <a href="https://gitlab.com/DuarteSantos8/opengym" target="_blank" rel="noopener">openGym by Duarte Santos</a> · exercise data: hasaneyldrm/exercises-dataset (MIT)<br />
       exercise images and animations © <a href="https://gymvisual.com/" target="_blank" rel="noopener">Gym visual</a>
     </div>
   </div>

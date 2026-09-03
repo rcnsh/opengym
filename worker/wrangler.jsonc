@@ -61,10 +61,11 @@
     "AUDIT_LOG": "1",
     "AUDIT_IP": "net",
     "AUDIT_MAX": "5000",
-    "AUDIT_DAYS": "0",
-    // rcn — the bootstrap account. Admins are matched by uid, not by name, so renaming the
-    // account does not change who is an admin.
-    "ADMIN_UIDS": "FsB6TfA9kogxD7pu"
+    "AUDIT_DAYS": "0"
+    // ADMIN_UIDS is deliberately absent: it is set with `wrangler secret put ADMIN_UIDS`.
+    // It is not a credential — a uid is useless without the matching passkey — but this repo is
+    // public, and naming the admin account in it only tells someone which account to go after.
+    // A fresh clone therefore deploys with no admin, which matches upstream's default.
   },
 
   "dev": {
