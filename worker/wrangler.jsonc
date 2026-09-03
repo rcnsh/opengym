@@ -7,6 +7,12 @@
   "compatibility_date": "2026-09-02",
   "observability": { "enabled": true },
 
+  // Must match RP_ID / ORIGIN below exactly — a passkey is bound to the hostname it was created
+  // on, and changing RP_ID later invalidates every passkey already registered.
+  "routes": [
+    { "pattern": "opengym.rcn.sh", "custom_domain": true }
+  ],
+
   // The whole point of serving the frontend from the same Worker: passkeys require a single
   // origin, so there is no nginx and no second hostname. run_worker_first keeps /api/* off the
   // asset path; everything else falls through to the built SPA.
@@ -21,8 +27,7 @@
     {
       "binding": "DB",
       "database_name": "opengym",
-      // Filled in by `wrangler d1 create opengym` — see worker/README.md.
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "95de5971-bed3-49de-96a4-5d46b4b9f884"
     }
   ],
 
