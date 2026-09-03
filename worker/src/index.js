@@ -116,8 +116,15 @@ const CSRF_EXEMPT = new Set([
 ]);
 
 function csrfOk(c, req, key) {
-  if (req.method === 'GET' || req.method === 'HEAD') return true;
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return true;
   if (CSRF_EXEMPT.has(key)) return true;
+  // The paired mobile app authenticates with a Bearer token. A browser never attaches one on its
+  // own, so there is no ambient authority for a hostile page to borrow and no origin to check.
+  // Without this every write from the Capacitor WebView is refused: its origin is https://localhost
+  // and its Sec-Fetch-Site is cross-site, so both checks below reject it. Pairing still succeeds,
+  // because pair/redeem is exempt above — which makes the failure look like a sync bug rather
+  // than a CSRF one.
+  if ((req.headers.authorization || '').startsWith('Bearer ')) return true;
   // Sec-Fetch-Site is set by the browser itself and no page can forge it, and it states exactly
   // the property wanted here — more precisely than comparing origins can.
   const site = req.headers['sec-fetch-site'];

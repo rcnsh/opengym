@@ -59,6 +59,23 @@ check('tampered signature rejected', r.body?.user === null, JSON.stringify(r.bod
 r = await call('/api/me', {}, 'gymsid=' + sign(`${UID}:${Date.now() - 1000}:0`));
 check('expired cookie rejected', r.body?.user === null, JSON.stringify(r.body));
 
+// Regression: the paired mobile app writes with a Bearer token from the Capacitor WebView, whose
+// origin is https://localhost and whose Sec-Fetch-Site is cross-site. Both CSRF checks reject
+// that, so the Bearer exemption is the only thing letting it through. Dropping it refuses every
+// write from the app while pairing still succeeds (pair/redeem is exempt), which reads like a
+// sync bug rather than a CSRF one.
+const bearer = { Authorization: 'Bearer ' + sign(`${UID}:${Date.now() + 86400000}:0`) };
+r = await fetch(BASE + '/api/data', {
+  method: 'PUT',
+  headers: {
+    'Content-Type': 'application/json',
+    Origin: 'https://localhost', 'Sec-Fetch-Site': 'cross-site', ...bearer
+  },
+  body: JSON.stringify({ state: { _ts: Date.now(), lang: 'en' } })
+});
+check('mobile app writes with a Bearer token from a foreign origin', r.status === 200,
+  `HTTP ${r.status} — CSRF refused the Capacitor WebView`);
+
 // A state large enough to span several 64 KB chunks, to prove reassembly.
 const workouts = Array.from({ length: 900 }, (_, i) => ({
   d: '2026-0' + (1 + (i % 9)) + '-' + String(1 + (i % 28)).padStart(2, '0'),
