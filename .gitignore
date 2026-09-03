@@ -15,6 +15,12 @@ worker/.wrangler/
 worker/.build/
 worker/.dev.vars
 
+# Backup of the deployed Worker secrets. Cloudflare stores secrets write-only — there is no way
+# to read one back — so this file is the ONLY copy. Losing SESSION_SECRET signs everyone out;
+# losing the VAPID keys kills every push subscription.
+# NOTE: `git clean -xfd` deletes ignored files. Keep a copy off this machine.
+worker/.secrets.backup
+
 # Build output / deps
 frontend/dist/
 node_modules/
