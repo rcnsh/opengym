@@ -47,6 +47,13 @@ jobs:
 
       - run: npm ci
 
+      # wrangler.jsonc points assets.directory at frontend/dist, which is gitignored and so is
+      # absent on a fresh checkout — wrangler refuses to bundle without it. A stub is enough:
+      # this job exists to check the Worker, the smoke test only calls /api/*, and the real
+      # frontend build is covered by test.yml.
+      - name: Stub the asset directory
+        run: mkdir -p ../frontend/dist && touch ../frontend/dist/.keep
+
       # Catches broken imports, a bad wrangler.jsonc, and the 3 MB Free-plan size cap.
       - name: Bundle
         run: npx wrangler deploy --dry-run --outdir=.build
