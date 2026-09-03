@@ -11,12 +11,11 @@
 # upstream dataset on jsDelivr instead, pinned to a commit so the CDN can cache it forever.
 name: Deploy demo to GitHub Pages
 
+# FORK: the push trigger is removed. This publishes *upstream's* public demo, and it cannot
+# succeed here — configure-pages fails with "Get Pages site failed" because Pages is not enabled
+# on this fork, and there is no reason to enable it: the deployment that matters is the Worker at
+# https://opengym.rcn.sh. Left runnable by hand so the file still merges cleanly from upstream.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:

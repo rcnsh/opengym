@@ -4,9 +4,12 @@ name: Publish Docker images
 # A tag that is later deleted (the versioning rule consolidates unreleased tags)
 # would otherwise leave its image tags behind in GHCR forever, and dependency
 # bots read those as a newer version. See issue #87.
+# FORK: the push trigger is removed. Every push to main was building and pushing two multi-arch
+# images to ghcr.io/rcnsh/opengym-{api,web}, which nothing consumes — docker-compose.yml still
+# pulls upstream's GitLab registry, and this fork deploys to Cloudflare. The release and manual
+# triggers stay, so `gh workflow run` or a published release still produces images if they are
+# ever wanted.
 on:
-  push:
-    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
