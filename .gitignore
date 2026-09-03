@@ -8,6 +8,13 @@ data/
 # Local config
 .env
 
+# Cloudflare Worker — local runtime state and secrets.
+# .dev.vars holds a real SESSION_SECRET and VAPID private key for `wrangler dev`; deployed
+# secrets live in `wrangler secret put`, never in the repo.
+worker/.wrangler/
+worker/.build/
+worker/.dev.vars
+
 # Build output / deps
 frontend/dist/
 node_modules/
