@@ -180,8 +180,43 @@ npm run test:smoke
 CI (`.github/workflows/worker.yml`) runs the bundle and this test on every push touching
 `worker/`, with no Cloudflare credentials.
 
-**Deploys are manual.** Nothing pushes to Cloudflare automatically, so `main` and production can
-drift. Remember to rebuild the frontend before deploying if you touched it.
+---
+
+## Continuous deployment
+
+This instance uses [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+pushing to `main` builds and deploys automatically. Set it up after your first manual deploy —
+the Worker has to exist before you can connect a repository to it.
+
+Workers & Pages → your Worker → Settings → Builds → Connect, then:
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `worker` |
+| Build command | `cd ../frontend && npm ci && npm run build:cloudflare` |
+| Deploy command | `npx wrangler deploy` (the default) |
+| Production branch | `main` |
+
+The build command is not optional: `frontend/dist` is gitignored, so without it the build fails
+with *"the directory specified by the assets.directory field does not exist"*.
+
+Cloudflare authenticates by pulling through a GitHub App you authorise in its dashboard, so no
+Cloudflare API token is stored in the repository. Free plan gives 3,000 build minutes a month;
+a build here takes about two.
+
+Worth knowing:
+
+- **Every push to `main` deploys**, including documentation-only commits. The GitHub Actions
+  workflow runs alongside it, not as a gate — a commit that fails the smoke test still ships.
+  If that matters to you, point the production branch at a release branch instead.
+- **Your secrets are untouched by deploys.** `SESSION_SECRET`, the VAPID keys and `ADMIN_UIDS`
+  live outside the code and vars, so redeploying never signs anyone out or breaks push.
+- **Preview URLs are not generated**, because this Worker implements a Durable Object
+  (`RestTimer`). Branch builds still run `wrangler versions upload` and validate the change; you
+  just do not get a clickable preview link.
+
+To deploy by hand anyway — for a rollback, or before the repository is connected — the steps in
+[Deploy](#deploy) still work. Remember to rebuild the frontend first if you touched it.
 
 ---
 

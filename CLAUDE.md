@@ -67,8 +67,11 @@ fork:
   hand.
 - `.gitea/workflows/` really is dormant — no Gitea remote is configured.
 
-There is no CI for the Cloudflare deployment: `wrangler deploy` is run by hand from `worker/`,
-so `main` and production can drift. See `worker/README.md`.
+The Cloudflare deployment is continuous, via Cloudflare Workers Builds (not GitHub Actions):
+pushing to `main` builds the frontend and runs `wrangler deploy` from `worker/`. Cloudflare pulls
+through a GitHub App, so there is no Cloudflare API token in the repo. The `Worker` Actions
+workflow runs alongside it rather than gating it — a commit that fails the smoke test still
+deploys. See `worker/README.md`.
 
 ## Architecture
 
