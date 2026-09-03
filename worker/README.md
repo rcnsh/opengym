@@ -33,27 +33,56 @@ Deliberate behaviour differences:
 - **`ALLOW_GUEST` defaults off here** (`wrangler.jsonc` sets it), because this instance is
   invite-only. Upstream defaults it on.
 
+## Deploying your own copy — read this first
+
+`wrangler.jsonc` in this repo is a **live deployment config, not a template**: it holds the real
+values for the instance at `opengym.rcn.sh`. Deploying it unchanged will fail, because it points
+at a D1 database and a domain you do not own. Change these five things before you run anything:
+
+| In `wrangler.jsonc` | Change to |
+| --- | --- |
+| `routes[0].pattern` | your hostname, or delete the `routes` block to deploy on `*.workers.dev` first |
+| `d1_databases[0].database_id` | the id printed by `wrangler d1 create` in step 2 below |
+| `vars.RP_ID` | your bare hostname, e.g. `gym.example.com` |
+| `vars.ORIGIN` | the full URL, e.g. `https://gym.example.com`, no trailing slash |
+| `name` | anything you like; it names the Worker |
+
+`RP_ID` and `ORIGIN` must agree with the hostname you actually serve from, or every passkey
+ceremony fails — and **changing `RP_ID` later invalidates every passkey already registered**, so
+settle it before anyone signs up. See *Why a custom domain* at the bottom.
+
 ## First deploy
 
-Everything below is free-tier. You need a domain on Cloudflare — see *Why a custom domain* at the
-bottom before substituting your own.
+Everything below is free-tier.
 
-**1. Install and create the database**
+**1. Install**
 
 ```bash
 cd worker && npm install
+```
+
+On npm 11+ this stops with "packages have install scripts not yet covered by allowScripts".
+Wrangler cannot run without them — `workerd` is the Cloudflare runtime and `esbuild` its bundler:
+
+```bash
+npm install-scripts approve workerd && npm install-scripts approve esbuild && npm install
+```
+
+**2. Create the database**
+
+```bash
 npx wrangler d1 create opengym
 ```
 
-Copy the printed `database_id` into `wrangler.jsonc`, replacing `REPLACE_WITH_D1_DATABASE_ID`.
+Copy the printed `database_id` into `wrangler.jsonc` as described above.
 
-**2. Apply the schema**
+**3. Apply the schema**
 
 ```bash
 npx wrangler d1 execute opengym --remote --file=schema.sql
 ```
 
-**3. Generate and set the secrets**
+**4. Generate and set the secrets**
 
 Upstream generates these into `./data` on first boot. There is no filesystem here, so they are
 Worker secrets and must be created once, up front. Losing `SESSION_SECRET` signs everyone out;
@@ -70,7 +99,7 @@ node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey
 Feed those two lines to `npx wrangler secret put VAPID_PUBLIC_KEY` and
 `npx wrangler secret put VAPID_PRIVATE_KEY` respectively.
 
-**4. Build the frontend**
+**5. Build the frontend**
 
 ```bash
 cd ../frontend && npm install && npm run build:cloudflare
@@ -78,19 +107,26 @@ cd ../frontend && npm install && npm run build:cloudflare
 
 `build:cloudflare` points the exercise images and gifs at jsDelivr instead of the local `media/`
 volume. These are **build-time** values baked into the bundle — setting them at runtime does
-nothing.
+nothing. The Worker serves `frontend/dist/` as static assets, so this must be built *before* you
+deploy, and rebuilt whenever you change the frontend.
 
-**5. Deploy**
+`sharp` and `fsevents` may report unapproved install scripts here. Neither is needed for
+`vite build` — ignore them.
+
+**6. Deploy**
 
 ```bash
 cd ../worker && npx wrangler deploy
 ```
 
-**6. Attach the custom domain**
+The `routes` block attaches your custom domain automatically, creating the DNS record for you, so
+there is nothing to do in the dashboard. Two things to know:
 
-In the dashboard, Workers & Pages → `opengym` → Settings → Domains & Routes → add
-`opengym.rcn.sh` as a Custom Domain. It must match `RP_ID` and `ORIGIN` in `wrangler.jsonc`
-exactly.
+- The token needs permission to write DNS in that zone. If the deploy reports an authentication
+  error on the domain, add it by hand instead: Workers & Pages → your Worker → Settings →
+  Domains & Routes → Custom Domain. Everything else still deployed.
+- Adding a custom domain **disables the `workers.dev` route**, which is wanted: that would be a
+  second origin your passkeys do not work on.
 
 ## Bootstrapping the first account
 
@@ -109,8 +145,18 @@ Register in the browser with that code, then find your uid:
 npx wrangler d1 execute opengym --remote --command "SELECT id, name FROM users"
 ```
 
-Put it in `ADMIN_UIDS` in `wrangler.jsonc` and redeploy. From then on invites are managed from the
-admin dashboard in the app.
+Then set it as a secret — **not** a var in `wrangler.jsonc`, which is public in this repo and
+would name the admin account to anyone reading it:
+
+```bash
+printf 'YOUR_UID_HERE' | npx wrangler secret put ADMIN_UIDS
+```
+
+It takes effect immediately; no redeploy needed. Reload the app and the admin dashboard appears —
+`ADMIN_UIDS` is read per request. From then on invites are managed from the admin dashboard.
+
+`ADMIN_UIDS` is a comma-separated list, and admins are matched by uid rather than name, so
+renaming an account does not change who is an admin.
 
 ## Local development
 
@@ -142,6 +188,32 @@ degrading, so these are hard edges, not soft ones.
 `CHUNK` in `src/store.js` is the knob for the row-write cost: raising it means fewer, larger rows
 per sync. It is 64 KB to stay clear of D1's 100 KB max SQL statement length as well as its 2 MB
 max row size.
+
+## Notifications, and what actually uses this server
+
+Two things are easy to conflate, and only one of them touches the Worker.
+
+**Web push (browser)** goes through this server: the browser registers with its push service,
+`POST /api/push/subscribe` stores the endpoint, and rest-timer alerts and day reminders are sent
+from the Durable Object alarm and the cron respectively.
+
+**The native Android/iOS app does not.** On the Capacitor build the reminder is an OS-scheduled
+local notification (`frontend/src/lib/mobile.js`), so it never creates a subscription and never
+reaches the cron. A phone using the app will show `subs: 0` and still get its reminders. That is
+correct, not a fault.
+
+Two failure modes worth knowing before you debug a "push is broken" report:
+
+- **De-Googled Chromium browsers cannot do web push at all.** Ungoogled-chromium and forks built
+  on it (Helium, for one) strip the Google API keys that FCM registration needs, so
+  `pushManager.subscribe()` fails with "Registration failed - push service error". Nothing
+  server-side can fix it; Firefox uses Mozilla's push service and works fine.
+- **A day reminder only fires on days with a routine planned.** `effectiveRoutineId` returns null
+  otherwise and the cron skips the user, so a brand-new account with no routines will never get
+  one however the reminder is configured. Settings says so in its footer, quietly.
+
+To test delivery without waiting on any of that, use the test button in Settings → Notifications
+(`POST /api/push/test`), which sends immediately and needs no routine or schedule.
 
 ## Why a custom domain
 
