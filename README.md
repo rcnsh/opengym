@@ -1,7 +1,19 @@
-> **This is a modified fork.** Changed since 2026-09 to add a Cloudflare Workers deployment
-> target (`worker/`) alongside the original Docker Compose stack, which still works unchanged.
+> ### This is a modified fork
+>
+> Changed since 2026-09 to add a **[Cloudflare Workers deployment target](worker/README.md)** —
+> the same app on Cloudflare's free tier instead of a VPS: no server to run, no Docker, no
+> monthly cost. One Worker serves the frontend and the API from a single origin, with D1 in
+> place of the JSON files, a Durable Object alarm for the rest timer and a Cron Trigger for
+> day reminders.
+>
+> **You need a domain you control** — passkeys are bound to the hostname, and `*.workers.dev`
+> will not do. See [worker/README.md](worker/README.md) for why, and for the ~15 minute setup.
+>
+> Everything below still applies: the original Docker Compose stack is untouched and works
+> exactly as documented. Pick whichever you prefer.
+>
 > Upstream is [openGym by Duarte Santos](https://gitlab.com/DuarteSantos8/opengym).
-> Licensed AGPL-3.0-or-later, like upstream — see [LICENSE](LICENSE) and [worker/README.md](worker/README.md).
+> Licensed AGPL-3.0-or-later, like upstream — see [LICENSE](LICENSE).
 
 <div align="center">
 

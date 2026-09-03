@@ -1,0 +1,81 @@
+# CI for the Cloudflare Worker (worker/). test.yml covers frontend/ and mcp/ and does not look
+# here, so without this nothing catches a Worker that has stopped bundling or a route that has
+# stopped answering.
+#
+# Everything below runs with no Cloudflare credentials: `deploy --dry-run` only bundles, and
+# `d1 execute --local` / `wrangler dev` use a local SQLite and miniflare. No secrets are needed
+# and none should be added — this workflow must stay safe to run on a fork's pull request.
+name: Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      # The Worker imports these two from the upstream tree rather than copying them.
+      - 'api/push-messages.js'
+      - 'api/verify-error.js'
+      - '.github/workflows/worker.yml'
+  pull_request:
+    paths:
+      - 'worker/**'
+      - 'api/push-messages.js'
+      - 'api/verify-error.js'
+      - '.github/workflows/worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node 22 to match web/Dockerfile, api/Dockerfile and test.yml. It also ships npm 10, which
+      # has no allowScripts gate — on npm 11 the workerd and esbuild install scripts need
+      # approving by hand (see worker/README.md).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      # Catches broken imports, a bad wrangler.jsonc, and the 3 MB Free-plan size cap.
+      - name: Bundle
+        run: npx wrangler deploy --dry-run --outdir=.build
+
+      # The smoke test mints its own session cookies, so it needs the same SESSION_SECRET the
+      # Worker verifies with. Throwaway, generated per run, never leaves the runner.
+      - name: Local secrets
+        run: |
+          {
+            printf 'SESSION_SECRET=%s\n' "$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+            printf 'ADMIN_UIDS=testuid000001\n'
+            printf 'ORIGIN=http://127.0.0.1:8787\n'
+            printf 'RP_ID=localhost\n'
+          } > .dev.vars
+
+      - name: Local database
+        run: |
+          npx wrangler d1 execute opengym --local --file=schema.sql
+          npx wrangler d1 execute opengym --local --command \
+            "INSERT OR REPLACE INTO users (id, name, created) VALUES ('testuid000001', 'tester', '2026-01-01T00:00:00.000Z')"
+
+      - name: Smoke test
+        run: |
+          npx wrangler dev --port 8787 --log-level error &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8787/api/health -o /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8787/api/health -o /dev/null || {
+            echo "wrangler dev never became ready"; exit 1;
+          }
+          npm run test:smoke
