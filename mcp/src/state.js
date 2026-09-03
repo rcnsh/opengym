@@ -1,10 +1,31 @@
-/* opengym-mcp state — reads ./data/state-<uid>.json + db.json (read-only). Cached with an
-   fs.watch + mtime fallback so a session the api server just wrote is visible on the next
-   tool call without a restart. */
+/* opengym-mcp state — read-only, with two backends.
+
+   FILE (default): reads ./data/state-<uid>.json + db.json straight off disk, cached with an
+   fs.watch + mtime fallback so a session the api server just wrote is visible on the next tool
+   call without a restart. This is the Docker Compose deployment.
+
+   REMOTE (set OPENGYM_URL): fetches the same two things over HTTPS from a running instance,
+   authenticated with a Bearer token. Needed for the Cloudflare deployment, where the state lives
+   in D1 and there is no ./data directory to read at all.
+
+   getState()/getUser() stay synchronous either way — index.js awaits refresh() before each tool
+   call, so tools.js needs no knowledge of which backend is in use. */
 import fs from 'node:fs'
 import path from 'node:path'
 
 const DATA_DIR = process.env.OPENGYM_DATA || path.join(process.cwd(), 'data')
+
+// Remote backend. The token is a normal openGym session token, minted by redeeming a pairing
+// code from Settings — the same one-shot flow the mobile app uses, so this needs no new API
+// surface and no Cloudflare credentials.
+const REMOTE = (process.env.OPENGYM_URL || '').replace(/\/+$/, '')
+const TOKEN = (process.env.OPENGYM_TOKEN || '').trim()
+// Long enough that a burst of tool calls in one answer costs a single round trip, short enough
+// that a set logged mid-conversation shows up.
+const REMOTE_TTL_MS = 15000
+let _fetchedAt = 0
+let _remoteUser = null
+let _remoteError = null
 
 // null = no state file (brand-new account); undefined = not yet loaded.
 let _state = undefined
@@ -53,8 +74,66 @@ function resolveUid() {
   )
 }
 
+/* ---------- remote backend ---------- */
+
+async function fetchJson(pathname) {
+  let res
+  try {
+    res = await fetch(REMOTE + pathname, {
+      headers: { Authorization: 'Bearer ' + TOKEN, Accept: 'application/json' }
+    })
+  } catch (e) {
+    throw new Error(`cannot reach ${REMOTE} — ${e.message}`)
+  }
+  if (res.status === 401) {
+    throw new Error(
+      `OPENGYM_TOKEN was rejected by ${REMOTE}. Tokens expire (SESSION_DAYS, 90 by default) and ` +
+      `are invalidated by "sign out everywhere" or a SESSION_SECRET rotation — mint a new one ` +
+      `from Settings → pair a device.`
+    )
+  }
+  if (!res.ok) throw new Error(`${pathname} returned HTTP ${res.status}`)
+  return await res.json()
+}
+
+// Refreshed at most every REMOTE_TTL_MS. Errors are cached too, so a dead instance reports the
+// same message on every tool call instead of stalling each one on a fresh timeout.
+async function refreshRemote(force) {
+  if (!force && Date.now() - _fetchedAt < REMOTE_TTL_MS) {
+    if (_remoteError) throw _remoteError
+    return
+  }
+  _fetchedAt = Date.now()
+  _remoteError = null
+  try {
+    const me = await fetchJson('/api/me')
+    if (!me?.user?.id) throw new Error(`${REMOTE} did not recognise OPENGYM_TOKEN — no profile returned`)
+    _remoteUser = { id: me.user.id, name: me.user.name || 'Profile', created: me.user.created || null }
+    _uid = me.user.id
+    const data = await fetchJson('/api/data')
+    // null state is a real answer: a profile that has never synced from a device.
+    _state = data?.state ? Object.assign({}, defaultsShape(), data.state) : null
+  } catch (e) {
+    _remoteError = e
+    throw e
+  }
+}
+
+// Called by index.js before every tool handler. No-op on the file backend, which has its own
+// mtime check inside getState().
+export async function refresh() {
+  if (!REMOTE) return
+  await refreshRemote(false)
+}
+
+/* ---------- file backend ---------- */
+
 // Idempotent. Picks the uid, loads db.json, attaches the watcher, primes state.
 export function init() {
+  if (REMOTE) {
+    if (!TOKEN) throw new Error('OPENGYM_URL is set but OPENGYM_TOKEN is not — both are required for a remote instance')
+    return
+  }
   if (_uid !== null) return
   if (!fs.existsSync(DATA_DIR)) throw new Error(`OPENGYM_DATA dir does not exist: ${DATA_DIR}`)
   _uid = resolveUid()
@@ -86,6 +165,9 @@ export function init() {
 
 // Returns the state object, or null for a fresh account that never signed in on a device.
 export function getState() {
+  // Remote: whatever the last refresh() put in the cache. index.js awaits that before every
+  // handler, so this is never staler than REMOTE_TTL_MS.
+  if (REMOTE) return _state === undefined ? null : _state
   init()
   const file = stateFile(_uid)
   // Re-read if the file's mtime changed since our last load — covers watcher omissions and
@@ -110,6 +192,7 @@ export function getState() {
 
 // Returns the user record (id + name). No passkey material, no VAPID keys, no push subs.
 export function getUser() {
+  if (REMOTE) return _remoteUser || { id: _uid, name: 'Profile', created: null }
   init()
   const u = _db.users.find(x => x.id === _uid) || { id: _uid, name: 'Profile', created: null }
   return { id: u.id, name: u.name, created: u.created || null }

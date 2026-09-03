@@ -2,20 +2,25 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) bridge that lets an external LLM
 application (Claude Desktop, Cursor, Cline, Continue, etc.) read your openGym profile —
-routines, workouts, body-weight log, estimated 1RMs, and muscle balance — directly from your
-self-hosted `./data` directory.
+routines, workouts, body-weight log, estimated 1RMs, and muscle balance.
 
-It is read-only, runs locally as a stdio process spawned by the LLM client, adds no new
-container, and requires no extra authentication. The LLM never sees passkeys, VAPID keys, or
-session secrets — it can only read the same `state-<uid>.json` files the openGym api already
-writes.
+It is read-only and runs locally as a stdio process spawned by the LLM client, adding no new
+container. It works against either deployment:
+
+- **Docker Compose** — reads the `state-<uid>.json` files in `./data` straight off disk. No
+  authentication, because the files are already on the machine.
+- **Cloudflare Workers** — fetches the same data over HTTPS from your instance, since there is
+  no `./data` directory when the state lives in D1. Authenticated with an ordinary openGym
+  session token you mint from Settings.
+
+Either way the LLM never sees passkeys, VAPID keys or session secrets: it reads exactly the
+per-user state the app itself syncs, and nothing else.
 
 The numbers it answers with are computed by the **same pure functions the React UI uses**
 (`frontend/src/lib/*.js`) — `estimate1RM`, `loadOfWorkouts`, `effectiveRoutine`, etc. — so a
 "what's my bench 1RM?" answer matches the Stats screen exactly.
 
-> Phase 1 of a multi-phase plan. Read-only today; long-lived token auth + write tools are
-> planned but not shipped yet. See **Roadmap** below.
+> Read-only. Write tools are planned but not shipped — see **Roadmap** below.
 
 ## Quick start
 
@@ -28,8 +33,11 @@ npm install
 
 ### 2. Point it at your data
 
-The MCP server reads the same `./data` directory `docker compose up` creates. Pick the profile
-to answer for — its user id is in `./data/db.json` under `users[].id`:
+Two backends. Setting `OPENGYM_URL` selects the remote one; leaving it unset reads from disk.
+
+**Docker Compose — reads `./data` directly**
+
+Pick the profile to answer for; its user id is in `./data/db.json` under `users[].id`:
 
 ```bash
 # single-user instance (the common self-hosted case) — auto-detected:
@@ -38,6 +46,34 @@ node src/index.js
 # multi-user instance, or just to be explicit:
 OPENGYM_UID=<your-uid> OPENGYM_DATA=/path/to/openGym/data node src/index.js
 ```
+
+**Cloudflare Workers — reads over HTTPS**
+
+There is no `./data` directory on this deployment; the state lives in D1. Point the server at
+your instance and give it a session token:
+
+```bash
+OPENGYM_URL=https://gym.example.com OPENGYM_TOKEN=<token> node src/index.js
+```
+
+Mint the token from a signed-in browser: **Settings → pair a device**, which shows a one-shot
+code, then redeem it:
+
+```bash
+curl -s -X POST https://gym.example.com/api/pair/redeem \
+  -H 'Content-Type: application/json' -d '{"code":"YOUR-CODE"}'
+```
+
+The `token` in the response is what goes in `OPENGYM_TOKEN`. This is the same pairing flow the
+mobile app uses, so it needs no extra API surface and no Cloudflare credentials.
+
+The token identifies one profile, so `OPENGYM_UID` is neither needed nor read in this mode. It is
+a normal session token: it expires after `SESSION_DAYS` (90 by default), and is invalidated by
+"sign out everywhere" or by rotating `SESSION_SECRET`. When that happens the server reports
+exactly that on startup — mint a new code and swap it in.
+
+**Treat the token as a password.** It grants read access to that profile, and write access to it
+through the API, for as long as it is valid. Keep it out of shell history and out of git.
 
 ### 3. Register with your LLM client
 
@@ -53,6 +89,24 @@ Add the server to your LLM client's MCP config. For Claude Desktop, edit
       "env": {
         "OPENGYM_DATA": "/absolute/path/to/openGym/data",
         "OPENGYM_UID": "<your-uid>"   // optional — auto-detected if you have one profile
+      }
+    }
+  }
+}
+```
+
+Against a Cloudflare instance, swap the `env` block for the remote pair — the `command` and
+`args` are identical:
+
+```jsonc
+{
+  "mcpServers": {
+    "opengym": {
+      "command": "node",
+      "args": ["/absolute/path/to/openGym/mcp/src/index.js"],
+      "env": {
+        "OPENGYM_URL": "https://gym.example.com",
+        "OPENGYM_TOKEN": "<token from the pairing redeem above>"
       }
     }
   }
@@ -101,10 +155,12 @@ dependencies landed in `frontend/`, no public exports changed.
 - **One runtime dependency beyond the MCP SDK:** none. No database driver, no HTTP framework.
 - **No new container.** stdio transport is spawned by the LLM client; nothing to add to
   `docker-compose.yml`.
-- **No new auth.** The filesystem is the boundary — same as `docker compose` running on the
-  user's box. No passkey material, VAPID keys, or session secrets ever cross it.
-- **No telemetry, no network.** Reads `./data/*.json` and exits when the LLM client
-  disconnects.
+- **No new auth mechanism.** On Docker the filesystem is the boundary, same as `docker compose`
+  running on your own box. On Cloudflare it reuses the existing device-pairing token rather than
+  inventing anything. No passkey material, VAPID keys or session secrets ever cross either.
+- **No telemetry.** Exits when the LLM client disconnects. The only network traffic it can make
+  is to your own instance, and only when you set `OPENGYM_URL` — the default backend reads
+  `./data/*.json` and opens no sockets at all.
 
 ## Tests
 
@@ -121,12 +177,14 @@ their own 92 tests in `frontend/src/lib/*.test.js`.
 
 ## Roadmap
 
-- **Done (Phase 1):** read-only stdio, 8 tools, direct `./data` access.
+- **Done:** read-only stdio, 8 tools, `./data` access, and an HTTPS backend for the Cloudflare
+  deployment authenticated with a device-pairing token.
 - **Phase 1.5:** a `progression_next` tool (what does the policy prescribe next?). No new
   deps; small surface area.
-- **Phase 2:** read+write over stdio. Requires a long-lived token auth path minted from the
-  admin dashboard (new `./data/tokens.json`) and a write-lock against the web UI's read-modify-
-  write of `state-<uid>.json`. Tools: `log_workout`, `add_bodyweight`, `edit_routine`,
+- **Phase 2:** read+write. The remote backend already carries a token that the API accepts for
+  writes, so the auth half is solved there; what remains is the conflict problem — both backends
+  would be doing a read-modify-write of the whole state document against a web UI doing the same,
+  and `PUT /api/data` is last-write-wins. Tools: `log_workout`, `add_bodyweight`, `edit_routine`,
   `assign_weekday`, `override_day`.
 - **Phase 3:** Streamable HTTP transport, opt-in 4th container in `docker-compose.yml`. Same
   tool implementations, second transport — the MCP SDK supports both behind one tool registration.

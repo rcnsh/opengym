@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { TOOLS } from './tools.js'
-import { init, getUser } from './state.js'
+import { init, getUser, refresh } from './state.js'
 
 const server = new McpServer({
   name: 'opengym',
@@ -17,6 +17,9 @@ const server = new McpServer({
 // handshake, even when state didn't resolve.
 try {
   init()
+  // On the remote backend this is the first call that actually contacts the instance, so a bad
+  // URL or a stale token surfaces here at startup rather than on the first tool call.
+  await refresh()
   const u = getUser()
   console.error(`[opengym-mcp] serving profile ${u.name} (${u.id})`)
 } catch (e) {
@@ -32,6 +35,8 @@ for (const t of TOOLS) {
     t.schema,
     async (params) => {
       try {
+        // No-op on the file backend, which re-reads on mtime change inside getState().
+        await refresh()
         const result = t.handler(params || {})
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       } catch (err) {

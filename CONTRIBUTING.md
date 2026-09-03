@@ -15,7 +15,17 @@ docs/      self-hosting guide.
 mcp/       optional Model Context Protocol server — read-only stdio bridge for LLM apps
            (Claude Desktop, Cursor, …) to query a user's workouts/1RM/muscle balance. Not in
            the Docker build; only runs when an LLM client spawns it. See mcp/README.md.
+worker/    FORK ONLY — the Cloudflare Workers deployment target. Same route table as
+           api/server.js behind a (req, res) shim, with D1 in place of the JSON files, a
+           Durable Object alarm for the rest timer and a Cron Trigger for day reminders.
+           See worker/README.md.
 ```
+
+**This fork has two deployment targets.** `docker compose up -d` runs the original Node + nginx
+stack, unchanged and fully supported. `worker/` runs the same application on Cloudflare's free
+tier. A change to `api/server.js` does **not** automatically apply to the Worker — the handlers
+were ported, not shared — so training-logic and API changes need checking against both. The
+Worker has its own test (`cd worker && npm run test:smoke`) and its own CI workflow.
 
 ## Running for development
 
