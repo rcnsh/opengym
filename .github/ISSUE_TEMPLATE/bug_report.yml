@@ -55,6 +55,6 @@ body:
       description: >
         Most login issues are an `RP_ID`/`ORIGIN` mismatch — check your `.env` against the
         domain you're accessing openGym from before reporting. See the
-        [self-hosting guide](../../docs/SELF_HOSTING.md).
+        [Cloudflare deployment guide](../../worker/README.md).
       options:
         - label: Yes, this is a login/passkey issue and I've already checked RP_ID/ORIGIN

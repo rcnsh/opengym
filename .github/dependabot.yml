@@ -58,29 +58,26 @@ updates:
         patterns: ['*']
         update-types: ['major']
 
-  # Base images — api/Dockerfile (node:22-alpine)
-  - package-ecosystem: docker
-    directory: /api
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 1
-    ignore:
-      # Odd-numbered Node majors are "Current", never LTS — they stop getting fixes in about
-      # six months. Dependabot's first run offered 22 → 25, which for something other people
-      # self-host is a stability downgrade for nothing. Even majors (22 → 24 → 26) still get
-      # proposed, which is the move actually worth reviewing.
-      - dependency-name: node
-        versions: ['25.x', '27.x', '29.x', '31.x', '33.x']
+  # FORK: the Docker ecosystems are gone. This fork deploys to Cloudflare Workers, so there is
+  # no api/Dockerfile or web/Dockerfile left to bump a base image in. The Worker below replaced
+  # them as the thing that actually ships.
 
-  # Base images — web/Dockerfile (node:22-alpine build stage + nginx:alpine)
-  - package-ecosystem: docker
-    directory: /web
+  # The Worker — worker/package.json (@simplewebauthn/server, web-push, wrangler).
+  # This is what is deployed, so its bumps matter more than api/'s, which is now reference only.
+  - package-ecosystem: npm
+    directory: /worker
     schedule:
       interval: monthly
-    open-pull-requests-limit: 1
-    ignore:
-      - dependency-name: node
-        versions: ['25.x', '27.x', '29.x', '31.x', '33.x']
+    open-pull-requests-limit: 3
+    groups:
+      worker:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      # @simplewebauthn/server verifies passkeys and wrangler controls the deploy — a major in
+      # either is worth reading on its own.
+      worker-major:
+        patterns: ['*']
+        update-types: ['major']
 
   # Workflow actions — everything under .github/workflows/
   - package-ecosystem: github-actions

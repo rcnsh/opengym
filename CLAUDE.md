@@ -14,22 +14,32 @@ License: AGPL-3.0-or-later.
 ```
 frontend/  React 19 + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
            android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
-api/       backend — server.js (Node, no framework), deps: @simplewebauthn/server, web-push.
-web/       multi-stage Dockerfile (builds frontend → nginx) + nginx.conf.template (serves app, proxies /api).
+worker/    THE DEPLOYMENT. Cloudflare Workers: same route table as api/server.js behind a
+           (req, res) shim, D1 for storage, a Durable Object alarm for the rest timer, a Cron
+           Trigger for day reminders. src/store.js is the D1 layer. See worker/README.md.
+api/       REFERENCE ONLY — not deployed, not runnable here (its Dockerfile is gone). server.js
+           is the upstream Node implementation the Worker was ported from; keep it to diff
+           against when pulling upstream releases. push-messages.js and verify-error.js are the
+           exception: worker/src imports both directly, so they ARE live code.
 mcp/       optional MCP server — read-only stdio bridge exposing a user's workouts/1RM/muscle
-           balance to LLM clients (Claude Desktop, Cursor…). Not part of the Docker build; only
-           runs when an LLM client spawns it.
-media/     exercise img/gif, gitignored, fetched at runtime by the `media` compose service.
-website/   static marketing site (plain HTML/CSS/JS), deployed separately by .gitlab-ci.yml.
-docs/      SELF_HOSTING.md, MOBILE.md.
+           balance to LLM clients (Claude Desktop, Cursor…). Two backends: ./data files, or
+           HTTPS against a Cloudflare instance with a pairing token. Imports frontend/src/lib.
+scripts/   generators for the committed exercise-name and instruction data. Rarely run.
+docs/      API.md, DATA_IMPORTS.md, MOBILE.md.
 ```
+
+**This fork removed the Docker Compose stack.** `docker-compose.yml`, `web/`, the Dockerfiles,
+`website/`, `.gitlab-ci.yml`, `.gitea/` and `.gitlab/` are all deleted — Cloudflare is the only
+target. A change to `api/server.js` does NOT reach the Worker; the handlers were ported, not
+shared, so API and training-logic changes need applying in both places.
 
 ## Commands
 
 ```bash
-# Local stack (api + web + media, prebuilt or built from source)
-cp .env.example .env
-docker compose up -d --build
+# The Worker, locally (miniflare + local D1). Secrets go in worker/.dev.vars.
+cd worker && npx wrangler d1 execute opengym --local --file=schema.sql && npx wrangler dev
+cd worker && npm run test:smoke     # integration test; needs wrangler dev running
+cd worker && npx wrangler deploy    # normally automatic via Workers Builds on push to main
 
 # Frontend dev server (hot reload), proxies /api to :3000
 cd frontend && npm install && npm run dev
@@ -135,13 +145,17 @@ notification code; it documents the exact env-var contract (`RP_ID`, `ORIGIN`, `
 `WEB_PORT`, `NGINX_PORT`, `BACKEND`, `SESSION_DAYS`, `ADMIN_UIDS`, `INVITE_ONLY`, `ALLOW_GUEST`,
 `AUDIT_*`, `VAPID_SUBJECT`) that real deployments depend on.
 
-### Docker / deploy
+### Deploy
 
-`docker-compose.yml` has three services: `media` (one-shot exercise-asset downloader, gitignored
-output), `api`, `web` (multi-stage build of `frontend/` served by nginx, which also proxies
-`/api` → `api` and serves the shared media volume — single origin, required for passkeys).
-`web/nginx.conf.template` is rendered from env vars at container start (`NGINX_PORT`, `BACKEND`,
-`PORT`), so host/port remapping works against prebuilt images without a rebuild.
+One Worker serves the built frontend (Workers static assets) and `/api/*` — single origin, which
+is what passkeys require and what nginx used to provide. Storage is D1: `users`, `creds`, `subs`,
+`invites`, `state_chunks` (the per-user blob, 64 KB per row), `challenges`, `pairings`,
+`presence`, `audit`. `SESSION_SECRET`, the VAPID pair and `ADMIN_UIDS` are Worker secrets, not
+vars — Cloudflare stores them write-only, so they cannot be read back.
+
+Pushing to `main` builds and deploys via Cloudflare Workers Builds. The frontend must be built
+first (`npm run build:cloudflare`, which points media at jsDelivr); the build command does that.
+`worker/README.md` has the whole contract, including the free-tier row limits worth watching.
 
 ## Guidelines from CONTRIBUTING.md worth knowing before changing code
 

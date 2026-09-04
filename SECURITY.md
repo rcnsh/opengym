@@ -1,5 +1,19 @@
 # Security policy
 
+> **Fork notice.** This document was written for upstream's Docker Compose deployment, which this
+> fork has removed. Everything about the threat model, passkeys, sessions, invites and the audit
+> log still applies — that code was ported, not rewritten. But every section describing
+> `docker-compose.yml`, `web/nginx.conf`, the Dockerfiles, container users, exposed ports or a
+> reverse proxy describes something that **does not exist here**: the app runs on Cloudflare
+> Workers, which terminates TLS, sets no nginx headers, and has no containers or ports.
+> Secrets are Worker secrets rather than files under `./data`. See
+> [worker/README.md](worker/README.md).
+>
+> **Report vulnerabilities in the Cloudflare port** (anything under `worker/`) to this fork's
+> maintainer via a [GitHub security advisory](https://github.com/rcnsh/opengym/security/advisories/new),
+> not to upstream — they did not write it. Bugs in the shared application code are worth
+> reporting upstream too, using the process below.
+
 openGym is a self-hosted app: you run the server, you hold the data. This file says which
 versions get fixes, how to report something privately, and — the part most people actually
 need — what the app protects you from and what it doesn't.

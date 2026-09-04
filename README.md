@@ -9,8 +9,10 @@
 > **You need a domain you control** — passkeys are bound to the hostname, and `*.workers.dev`
 > will not do. See [worker/README.md](worker/README.md) for why, and for the ~15 minute setup.
 >
-> Everything below still applies: the original Docker Compose stack is untouched and works
-> exactly as documented. Pick whichever you prefer.
+> **The Docker Compose stack has been removed from this fork.** `docker-compose.yml`, `web/` and
+> the Dockerfiles are gone; Cloudflare is the only deployment target here. `api/server.js` is
+> kept as the reference the Worker was ported from, and two of its helpers are imported by the
+> Worker directly, but it is not run. If you want the original self-hosted stack, use upstream.
 >
 > Upstream is [openGym by Duarte Santos](https://gitlab.com/DuarteSantos8/opengym).
 > Licensed AGPL-3.0-or-later, like upstream — see [LICENSE](LICENSE).
@@ -25,7 +27,7 @@
 
 Plan your week, run guided workouts, track every set and your body weight over time —
 on your phone, synced across devices, behind your own passkey login.
-No account on someone else's server, no subscription, no ads. Just `docker compose up`.
+No account on someone else's server, no subscription, no ads. Runs free on Cloudflare Workers.
 
 <br>
 
@@ -33,15 +35,11 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 ![Self-hosted](https://img.shields.io/badge/self--hosted-%F0%9F%8F%A0-60a5fa?style=flat-square)
 ![PWA](https://img.shields.io/badge/PWA-installable-a78bfa?style=flat-square)
 ![React](https://img.shields.io/badge/React-19-38bdf8?style=flat-square&logo=react&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)
 ![No tracking](https://img.shields.io/badge/telemetry-none-f472b6?style=flat-square)
 <br>
-[![Pipeline](https://gitlab.com/DuarteSantos8/opengym/badges/main/pipeline.svg?style=flat-square)](https://gitlab.com/DuarteSantos8/opengym/-/pipelines)
-![Last commit](https://img.shields.io/gitlab/last-commit/DuarteSantos8%2Fopengym?style=flat-square)
-[![Stars](https://img.shields.io/gitlab/stars/DuarteSantos8%2Fopengym?style=flat-square)](https://gitlab.com/DuarteSantos8/opengym/-/starrers)
-[![Issues](https://img.shields.io/gitlab/issues/open/DuarteSantos8%2Fopengym?style=flat-square)](https://gitlab.com/DuarteSantos8/opengym/-/issues)
-[![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/e62jY6fwVb)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?style=flat-square&logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/duartesantos)
+[![Worker CI](https://github.com/rcnsh/opengym/actions/workflows/worker.yml/badge.svg)](https://github.com/rcnsh/opengym/actions/workflows/worker.yml)
+[![Tests](https://github.com/rcnsh/opengym/actions/workflows/test.yml/badge.svg)](https://github.com/rcnsh/opengym/actions/workflows/test.yml)
 
 </div>
 
@@ -59,11 +57,11 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 
 <div align="center">
 
-### [🌐 opengym.duarte-santos.ch](https://opengym.duarte-santos.ch) · [📦 Source on GitLab](https://gitlab.com/DuarteSantos8/opengym)
+### Upstream: [🌐 opengym.duarte-santos.ch](https://opengym.duarte-santos.ch) · [📦 GitLab](https://gitlab.com/DuarteSantos8/opengym)
 
-Screenshots, docs and the APK download live on the site.<br>
-<sub>Want to poke at it first? The <a href="https://opengym.duarte-santos.ch/demo/">in-browser
-demo</a> is the real app with example data — no account, nothing to install.</sub>
+<sub>That site, its demo and its APK downloads belong to the original project, not to this fork —
+they run upstream's code, not the version here. Deploy guide for <b>this</b> fork:
+<a href="worker/README.md">worker/README.md</a>.</sub>
 
 </div>
 
@@ -116,18 +114,25 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 
 ## Quick start (self-host)
 
-You need [Docker](https://docs.docker.com/get-docker/) with Compose.
+This fork deploys to **Cloudflare Workers** on the free tier — one Worker serving the app and
+the API from a single origin, D1 for storage. No server to run, no Docker, no monthly cost.
+
+You need a Cloudflare account and a domain on it. Passkeys are bound to the hostname, and
+`*.workers.dev` will not do — see [worker/README.md](worker/README.md) for why.
 
 ```bash
-git clone https://gitlab.com/DuarteSantos8/opengym
-cd openGym
-cp .env.example .env
-docker compose pull   # grab prebuilt images (amd64 + arm64) — skip to build from source instead
-docker compose up -d
+git clone https://github.com/rcnsh/opengym
+cd opengym/worker && npm install
+npx wrangler d1 create opengym          # put the printed id in wrangler.jsonc
+npx wrangler d1 execute opengym --remote --file=schema.sql
 ```
 
-Open **http://localhost:8080**, tap **Create profile**, and you're in. First launch downloads
-the exercise media (~140 MB) once.
+Then set three secrets, build the frontend, and deploy. The full sequence — including the five
+values in `wrangler.jsonc` you must change first, and how to create the first account on an
+invite-only instance — is in **[worker/README.md](worker/README.md)**. Budget fifteen minutes.
+
+The exercise media (~140 MB of images and GIFs) is not downloaded or hosted: the Cloudflare
+build points at jsDelivr instead, pinned to a commit.
 
 > **About that media:** it reaches openGym through
 > [hasaneyldrm/exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset), which
@@ -136,12 +141,9 @@ the exercise media (~140 MB) once.
 > openGym's AGPL, and their ownership is currently disputed between Gym visual and ExerciseDB.
 > openGym ships none of it: your instance downloads it from upstream. Reusing it yourself,
 > commercially or not, means clearing it with the rights holder — see [NOTICE.md](NOTICE.md).
- Prefer building the images yourself instead of pulling from
-GitLab's registry? Drop the `pull` step and run `docker compose up -d --build` — you don't need Node or
-a build step locally either way.
-
-> Want it reachable from your phone over the internet with passkeys? You'll need an HTTPS
-> domain — a two-line change in `.env`. See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+Cloudflare terminates HTTPS for you and creates the DNS record at deploy time, so there is no
+certificate or reverse proxy to configure — which is what passkeys need and the only reason the
+original stack wanted a domain and a tunnel.
 
 ## Mobile app (no server at all)
 
@@ -189,16 +191,14 @@ server — they stay in your phone's secure hardware / your password manager.
 
 ## Configuration
 
-All via `.env` (see `.env.example`):
+Non-secret settings live in `vars` in [`worker/wrangler.jsonc`](worker/wrangler.jsonc). The
+port and proxy variables the Docker stack needed (`WEB_PORT`, `NGINX_PORT`, `BACKEND`, `PORT`)
+have no meaning here — one Worker serves both halves, so there is nothing to proxy.
 
 | Variable      | What it is                                           | Default                 |
 |---------------|------------------------------------------------------|-------------------------|
-| `RP_ID`       | Hostname passkeys are bound to                       | `localhost`             |
-| `ORIGIN`      | Full URL the app is served from                      | `http://localhost:8080` |
-| `WEB_PORT`    | Host port for the web UI                             | `8080`                  |
-| `NGINX_PORT`  | Port the web container listens on, inside the container | `80`                 |
-| `BACKEND`     | Name of the API service that `/api` is proxied to — change it if yours isn't called `api` | `api` |
-| `PORT`        | Port the API listens on; the web container proxies to the same value | `3000`  |
+| `RP_ID`       | Hostname passkeys are bound to — **changing it invalidates every passkey** | `localhost` |
+| `ORIGIN`      | Full URL the app is served from                      | `http://localhost:8787` |
 | `RP_NAME`     | Name shown in the passkey prompt                     | `openGym`               |
 | `SESSION_DAYS`| How long a sign-in lasts, in days                    | `90`                    |
 | `ADMIN_UIDS`  | User ids that get the admin dashboard (comma-separated) | *(none)*             |
@@ -210,9 +210,13 @@ All via `.env` (see `.env.example`):
 | `AUDIT_IP`    | Record the caller's address: `off`, `net` (network only) or `full` | `off`     |
 | `VAPID_SUBJECT` | Contact URL sent with push notifications           | your `ORIGIN`           |
 
-Push notification keys are generated on first run and saved to `./data/vapid.json` — nothing to set.
-`DATA_DIR` is pinned to `/data` by `docker-compose.yml` and mapped to `./data` on the host; change the
-host side of that volume, not the variable.
+Four values are **secrets**, not vars, and are set once with `wrangler secret put`:
+`SESSION_SECRET` (signs session cookies), `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (web push),
+and `ADMIN_UIDS`. The original stack generated the first three into `./data` on first boot; there
+is no filesystem here, so they are created up front — see
+[worker/README.md](worker/README.md#deploy). Cloudflare stores secrets write-only and cannot show
+them to you again, so keep a copy: losing `SESSION_SECRET` signs everyone out, and losing the
+VAPID pair kills every push subscription.
 
 ## Roadmap
 
@@ -231,11 +235,11 @@ Rough, community-driven — ideas and PRs welcome:
 
 ## Tech
 
-React 19 + Vite (React Router, Zustand) · Node (no framework) · nginx · Docker Compose ·
+React 19 + Vite (React Router, Zustand) · Cloudflare Workers · D1 · Durable Objects ·
 WebAuthn · exercise data from [hasaneyldrm/exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset)
 (MIT metadata and instructions; media © Gym visual — see [License](#license)).
-No database server, no cloud dependencies — the frontend builds inside Docker, so self-hosting
-stays a one-command `docker compose up`.
+Two runtime dependencies on the server side, both in `worker/`: `@simplewebauthn/server` for
+passkeys and `web-push` for notifications.
 
 The training logic — progression rules, 1RM estimation, how a logged session is read back —
 lives in pure functions under `frontend/src/lib/` with tests next to them: `npm test` in
@@ -255,7 +259,7 @@ in the Docker build.
   `question` and an idea `idea`, and it gets treated as one rather than as agreed-on work. Use
   an issue over the Discord for anything the next person should be able to find by searching.
 - **Login trouble?** Most of it is an `RP_ID`/`ORIGIN` mismatch — check
-  [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) before opening an issue.
+  [worker/README.md](worker/README.md) before opening an issue.
 - **Merge requests** — [open one on GitLab](https://gitlab.com/DuarteSantos8/opengym/-/merge_requests); see
   [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # node:22-alpine in web/Dockerfile and api/Dockerfile — CI must match production.
+      # the Node the Worker is built and tested against — CI must match production.
       - uses: actions/setup-node@v7
         with:
           node-version: 22
