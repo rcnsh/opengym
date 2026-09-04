@@ -11,7 +11,7 @@
     "test:smoke": "node test/smoke.mjs"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.3.2",
+    "@simplewebauthn/server": "^13.3.3",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

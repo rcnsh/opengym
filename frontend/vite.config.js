@@ -45,5 +45,8 @@ export default defineConfig({
       '/gif': { target: media, changeOrigin: true }
     }
   },
-  build: { chunkSizeWarningLimit: 1500 }
+  build: { chunkSizeWarningLimit: 1500 },
+  // Only needed to paper over Node 26's experimental localStorage global, which is undefined
+  // and shadows happy-dom's. A no-op on the Node 22 CI runs. See vitest.setup.js.
+  test: { setupFiles: ['./vitest.setup.js'] }
 })
