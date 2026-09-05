@@ -212,17 +212,23 @@ pushing to `main` builds and deploys automatically. Set it up after your first m
 the Worker has to exist before you can connect a repository to it — and it authorises through a
 GitHub App in the dashboard, so no Cloudflare API token is stored in this repository.
 
-There are two triggers, and **both need these settings**. Workers & Pages → your Worker →
-Settings → Builds:
+Workers & Pages → your Worker → Settings → Builds → Build configuration:
 
-| Setting | Production (`main`) | Other branches |
-| --- | --- | --- |
-| Root directory | *(repository root)* | *(repository root)* |
-| Build command | `npm run build` | `npm run build` |
-| Deploy command | `npm run deploy:instance` | `npm run upload:instance` |
+| Field | Value |
+| --- | --- |
+| Root directory | *blank* — the repository root |
+| Build command | `npm run build` |
+| Deploy command | `npm run deploy:instance` |
+| Version command | `npm run upload:instance` |
+
+There are two triggers behind that one panel: **Deploy command** runs on the production branch,
+**Version command** on every other branch. The dashboard does not say so, and it is the reason a
+pull request can fail while `main` is configured correctly.
 
 Root directory is *not* `worker` any more: `wrangler.jsonc` and the Worker's dependencies live at
-the repository root, for the reason at the top of this file.
+the repository root, for the reason at the top of this file. Leaving it set to `worker` mostly
+still works by accident — npm walks up to find the root manifest, and so does wrangler — but
+wrangler walking up is exactly what makes it load the generic config instead of the merged one.
 
 The build command is not optional: `frontend/dist` is gitignored, so without it the build fails
 with *"the directory specified by the assets.directory field does not exist"*.

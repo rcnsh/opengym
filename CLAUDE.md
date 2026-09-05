@@ -96,10 +96,13 @@ The Cloudflare deployment is continuous, via Cloudflare Workers Builds (not GitH
 Two triggers, both connected to `rcnsh/opengym` through a GitHub App, so there is no Cloudflare
 API token in the repo:
 
-| Trigger | Branches | Deploy command |
-| --- | --- | --- |
-| production | `main` | `npm run deploy:instance` |
-| non-production | everything else | `npm run upload:instance` (uploads a version, does not deploy) |
+| Trigger | Branches | Command | Dashboard field |
+| --- | --- | --- | --- |
+| production | `main` | `npm run deploy:instance` | Deploy command |
+| non-production | everything else | `npm run upload:instance` | **Version command** |
+
+Both live behind one "Build configuration" panel, which is why a PR build can fail while `main`
+is set up correctly — the two are separate triggers and the panel does not say so.
 
 Both use root directory *(repository root)* and build command `npm run build`. The root directory
 was `worker` until the config moved up; a trigger still pointing there picks up the generic
