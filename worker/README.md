@@ -207,36 +207,36 @@ touching the Worker, with no Cloudflare credentials.
 
 ## Continuous deployment
 
-**Not connected on this instance yet.** Every deployment so far has come from `wrangler` on a
-laptop; the Cloudflare API reports no build configuration and no builds for this Worker. Until
-that changes, a push to `main` ships nothing — deploy by hand with `npm run deploy:instance`.
+This instance uses [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+pushing to `main` builds and deploys automatically. Set it up after your first manual deploy —
+the Worker has to exist before you can connect a repository to it — and it authorises through a
+GitHub App in the dashboard, so no Cloudflare API token is stored in this repository.
 
-To connect it, use [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
-pushing to `main` then builds and deploys automatically. It has to come after a manual deploy —
-the Worker must exist before a repository can be connected to it — and it authorises through a
-GitHub App in the dashboard, which is why there is no API token for it in this repo and no way to
-script the connection.
+There are two triggers, and **both need these settings**. Workers & Pages → your Worker →
+Settings → Builds:
 
-Workers & Pages → your Worker → Settings → Builds → Connect, then:
+| Setting | Production (`main`) | Other branches |
+| --- | --- | --- |
+| Root directory | *(repository root)* | *(repository root)* |
+| Build command | `npm run build` | `npm run build` |
+| Deploy command | `npm run deploy:instance` | `npm run upload:instance` |
 
-| Setting | Value |
-| --- | --- |
-| Root directory | *(repository root)* |
-| Build command | `npm run build` |
-| Deploy command | `npm run deploy:instance` |
-| Production branch | `main` |
+Root directory is *not* `worker` any more: `wrangler.jsonc` and the Worker's dependencies live at
+the repository root, for the reason at the top of this file.
 
 The build command is not optional: `frontend/dist` is gitignored, so without it the build fails
 with *"the directory specified by the assets.directory field does not exist"*.
 
-The deploy command matters just as much. `npx wrangler deploy` would deploy the **generic**
-config — no custom domain, `RP_ID` of `localhost`, and a placeholder database id — which is a
-working Worker pointed at nothing. `npm run deploy:instance` is what folds `instance.jsonc` back
-in, and it applies pending migrations first.
+The deploy command matters just as much. Plain `npx wrangler deploy` deploys the **generic**
+config — no custom domain, `RP_ID` of `localhost`, and a placeholder database id. In practice it
+does not silently ship that: the placeholder id fails validation with *"D1 binding 'DB'
+references database '00000000-…' which was not found"*, so the build stops rather than replacing
+a working instance. But it does mean nothing deploys until the command is right.
+`npm run deploy:instance` folds `instance.jsonc` back in, applying pending migrations first.
+`npm run upload:instance` is the branch-build equivalent: it uploads a version against the real
+bindings without deploying it or touching the database.
 
-Cloudflare authenticates by pulling through a GitHub App you authorise in its dashboard, so no
-Cloudflare API token is stored in the repository. Free plan gives 3,000 build minutes a month;
-a build here takes about two.
+Free plan gives 3,000 build minutes a month; a build here takes about two.
 
 Worth knowing:
 

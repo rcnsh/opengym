@@ -54,7 +54,7 @@ npm install && npx wrangler d1 migrations apply DB --local && npm run dev
 npm test                    # node:test — push copy, verify-error, the config merge
 npm run test:smoke          # integration test; needs `npm run dev` running, and INVITE_ONLY=1
 npm run config              # write wrangler.instance.json without deploying
-npm run deploy:instance     # merge + migrate + deploy (manual — Workers Builds is not connected)
+npm run deploy:instance     # merge + migrate + deploy; Workers Builds runs this on main
 
 # Frontend dev server (hot reload), proxies /api to :3000
 cd frontend && npm install && npm run dev
@@ -92,12 +92,22 @@ fork:
   hand.
 - `.gitea/workflows/` really is dormant — no Gitea remote is configured.
 
-**Cloudflare Workers Builds is NOT connected** (checked 2026-09-05: no build configuration and
-zero builds for the `opengym` Worker; every deployment's source is `wrangler`). Deploys are manual
-— `npm run deploy:instance` from the repo root — so a push to `main` currently ships nothing.
-`worker/README.md` has the settings to connect it; the connection itself goes through a GitHub App
-in the Cloudflare dashboard and cannot be scripted. Once connected, the `Worker` Actions workflow
-runs alongside it rather than gating it — a commit that fails the smoke test still deploys.
+The Cloudflare deployment is continuous, via Cloudflare Workers Builds (not GitHub Actions).
+Two triggers, both connected to `rcnsh/opengym` through a GitHub App, so there is no Cloudflare
+API token in the repo:
+
+| Trigger | Branches | Deploy command |
+| --- | --- | --- |
+| production | `main` | `npm run deploy:instance` |
+| non-production | everything else | `npm run upload:instance` (uploads a version, does not deploy) |
+
+Both use root directory *(repository root)* and build command `npm run build`. The root directory
+was `worker` until the config moved up; a trigger still pointing there picks up the generic
+`wrangler.jsonc` and fails on its placeholder `database_id` rather than deploying it. Note the
+Builds API is not writable with the usual read tokens — these settings are dashboard-only.
+
+The `Worker` Actions workflow runs alongside this rather than gating it — a commit that fails the
+smoke test still deploys.
 
 ## Architecture
 
@@ -171,7 +181,7 @@ is what passkeys require and what nginx used to provide. Storage is D1: `users`,
 `presence`, `audit`. `SESSION_SECRET`, the VAPID pair and `ADMIN_UIDS` are Worker secrets, not
 vars — Cloudflare stores them write-only, so they cannot be read back.
 
-Deploys are manual today (see above). If Workers Builds is connected later, the frontend must be
+Pushing to `main` builds and deploys via Workers Builds. The frontend must be
 built first (`npm run build`, which points media at jsDelivr); the build command does that, and the
 deploy command is `npm run deploy:instance` so `instance.jsonc` is folded back in — plain
 `npx wrangler deploy` would ship the generic config with `RP_ID=localhost` and a placeholder

@@ -10,6 +10,7 @@
     "config": "node scripts/wrangler-instance.mjs",
     "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
     "deploy:instance": "npm run config && wrangler d1 migrations apply DB --remote -c wrangler.instance.json && wrangler deploy -c wrangler.instance.json",
+    "upload:instance": "npm run config && wrangler versions upload -c wrangler.instance.json",
     "test": "node --test scripts/*.test.mjs worker/test/*.test.js",
     "test:smoke": "node worker/test/smoke.mjs",
     "size": "wrangler deploy --dry-run --outdir=.build"
