@@ -15,8 +15,8 @@ import { Store } from './store.js';
 import { config, sendPush } from './runtime.js';
 // Imported from the upstream tree rather than copied: both are pure, dependency-free ESM, so they
 // stay on the rebase path and the two runtimes can never disagree about wording or error text.
-import { dayReminderPush, restTimerPush, testPush } from '../../api/push-messages.js';
-import { verifyError } from '../../api/verify-error.js';
+import { dayReminderPush, restTimerPush, testPush } from './push-messages.js';
+import { verifyError } from './verify-error.js';
 
 export { RestTimer } from './user-do.js';
 

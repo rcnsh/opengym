@@ -1,10 +1,10 @@
-# CI for the Cloudflare Worker (worker/). test.yml covers frontend/ and mcp/ and does not look
-# here, so without this nothing catches a Worker that has stopped bundling or a route that has
-# stopped answering.
+# CI for the Cloudflare Worker. test.yml covers frontend/ and mcp/ and does not look here, so
+# without this nothing catches a Worker that has stopped bundling or a route that has stopped
+# answering.
 #
 # Everything below runs with no Cloudflare credentials: `deploy --dry-run` only bundles, and
-# `d1 execute --local` / `wrangler dev` use a local SQLite and miniflare. No secrets are needed
-# and none should be added — this workflow must stay safe to run on a fork's pull request.
+# `d1 migrations apply --local` / `wrangler dev` use a local SQLite and miniflare. No secrets are
+# needed and none should be added — this workflow must stay safe to run on a fork's pull request.
 name: Worker
 
 on:
@@ -12,15 +12,20 @@ on:
     branches: [main]
     paths:
       - 'worker/**'
-      # The Worker imports these two from the upstream tree rather than copying them.
-      - 'api/push-messages.js'
-      - 'api/verify-error.js'
+      - 'wrangler.jsonc'
+      - 'instance.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/wrangler-instance*.mjs'
       - '.github/workflows/worker.yml'
   pull_request:
     paths:
       - 'worker/**'
-      - 'api/push-messages.js'
-      - 'api/verify-error.js'
+      - 'wrangler.jsonc'
+      - 'instance.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/wrangler-instance*.mjs'
       - '.github/workflows/worker.yml'
   workflow_dispatch:
 
@@ -30,9 +35,6 @@ permissions:
 jobs:
   worker:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: worker
     steps:
       - uses: actions/checkout@v7
 
@@ -43,23 +45,34 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: worker/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
+
+      # The push copy, the verify-error message, and the merge that decides which hostname and
+      # database a deploy lands on.
+      - run: npm test
 
       # wrangler.jsonc points assets.directory at frontend/dist, which is gitignored and so is
       # absent on a fresh checkout — wrangler refuses to bundle without it. A stub is enough:
       # this job exists to check the Worker, the smoke test only calls /api/*, and the real
       # frontend build is covered by test.yml.
       - name: Stub the asset directory
-        run: mkdir -p ../frontend/dist && touch ../frontend/dist/.keep
+        run: mkdir -p frontend/dist && touch frontend/dist/.keep
 
-      # Catches broken imports, a bad wrangler.jsonc, and the 3 MB Free-plan size cap.
+      # Catches broken imports, a bad wrangler.jsonc, and the 3 MB Free-plan size cap. Both
+      # configs are checked: the generic one the Deploy button uses, and the merged one this
+      # instance actually ships.
       - name: Bundle
-        run: npx wrangler deploy --dry-run --outdir=.build
+        run: |
+          npx wrangler deploy --dry-run --outdir=.build
+          npm run config
+          npx wrangler deploy --dry-run --outdir=.build -c wrangler.instance.json
 
       # The smoke test mints its own session cookies, so it needs the same SESSION_SECRET the
       # Worker verifies with. Throwaway, generated per run, never leaves the runner.
+      # INVITE_ONLY is set here rather than in wrangler.jsonc — the generic config leaves it off,
+      # and the invite assertions need it on.
       - name: Local secrets
         run: |
           {
@@ -67,12 +80,13 @@ jobs:
             printf 'ADMIN_UIDS=testuid000001\n'
             printf 'ORIGIN=http://127.0.0.1:8787\n'
             printf 'RP_ID=localhost\n'
+            printf 'INVITE_ONLY=1\n'
           } > .dev.vars
 
       - name: Local database
         run: |
-          npx wrangler d1 execute opengym --local --file=schema.sql
-          npx wrangler d1 execute opengym --local --command \
+          npx wrangler d1 migrations apply DB --local
+          npx wrangler d1 execute DB --local --command \
             "INSERT OR REPLACE INTO users (id, name, created) VALUES ('testuid000001', 'tester', '2026-01-01T00:00:00.000Z')"
 
       - name: Smoke test

@@ -12,7 +12,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { Store } from './store.js';
 import { config, sendPush } from './runtime.js';
-import { restTimerPush } from '../../api/push-messages.js';
+import { restTimerPush } from './push-messages.js';
 
 export class RestTimer extends DurableObject {
   async fetch(request) {

@@ -6,34 +6,44 @@ to keep it that way — easy to read, easy to self-host.
 ## Project layout
 
 ```
-frontend/  React + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
-           android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
-api/       backend — server.js (Node, no framework), one dependency (@simplewebauthn/server).
-web/       multi-stage Dockerfile (builds frontend → nginx) + nginx.conf (serves app, proxies /api).
-media/     exercise img/gif (gitignored, fetched at runtime).
-docs/      self-hosting guide.
-mcp/       optional Model Context Protocol server — read-only stdio bridge for LLM apps
-           (Claude Desktop, Cursor, …) to query a user's workouts/1RM/muscle balance. Not in
-           the Docker build; only runs when an LLM client spawns it. See mcp/README.md.
-worker/    FORK ONLY — the Cloudflare Workers deployment target. Same route table as
-           api/server.js behind a (req, res) shim, with D1 in place of the JSON files, a
-           Durable Object alarm for the rest timer and a Cron Trigger for day reminders.
+wrangler.jsonc  the generic Worker config — bindings, cron, compatibility date. Deployable by
+                anyone, which is what makes the README's Deploy to Cloudflare button work.
+instance.jsonc  ONE deployment's own values: hostname, database id, policy choices. If you fork
+                openGym, this is the file you edit. See docs/CONFIG.md.
+worker/    THE DEPLOYMENT. src/ is the Cloudflare Worker: the same route table as
+           api/server.js behind a (req, res) shim, D1 in place of the JSON files, a Durable
+           Object alarm for the rest timer and a Cron Trigger for day reminders.
+           migrations/ is the D1 schema; test/ holds the unit tests and the smoke test.
            See worker/README.md.
+frontend/  React + Vite app (src/views, src/components, src/store, src/lib). Builds to static
+           files the Worker serves. android/ + ios/ are the Capacitor shells for the standalone
+           mobile app (docs/MOBILE.md).
+mcp/       optional Model Context Protocol server — read-only stdio bridge for LLM apps
+           (Claude Desktop, Cursor, …) to query a user's workouts/1RM/muscle balance. Not part
+           of the deployment; only runs when an LLM client spawns it. See mcp/README.md.
+api/       REFERENCE ONLY, not deployed and not runnable — upstream's Node implementation, kept
+           to diff against when pulling an upstream release. See api/README.md.
+scripts/   generators for the committed exercise data, plus the config merge used by deploys.
+docs/      CONFIG, API, DATA_IMPORTS, MOBILE.
+media/     exercise img/gif (gitignored; the deployed build points at jsDelivr instead).
 ```
 
-**This fork has two deployment targets.** `docker compose up -d` runs the original Node + nginx
-stack, unchanged and fully supported. `worker/` runs the same application on Cloudflare's free
-tier. A change to `api/server.js` does **not** automatically apply to the Worker — the handlers
-were ported, not shared — so training-logic and API changes need checking against both. The
-Worker has its own test (`cd worker && npm run test:smoke`) and its own CI workflow.
+**This fork removed the Docker Compose stack** — `docker-compose.yml`, `web/` and the Dockerfiles
+are gone, and Cloudflare Workers is the only deployment target. A change to `api/server.js` does
+**not** reach the Worker: the handlers were ported, not shared, so API and training-logic changes
+need applying in both places if you want the upstream diff to stay readable. The Worker has its
+own tests (`npm test` and `npm run test:smoke`) and its own CI workflow.
 
 ## Running for development
 
 ```bash
-cp .env.example .env
-docker compose up -d --build      # api + web + media on :8080
-# frontend hot reload:
-cd frontend && npm install && npm run dev
+# the Worker, locally (miniflare + a local D1). Secrets go in .dev.vars — copy .dev.vars.example.
+npm install
+npx wrangler d1 migrations apply DB --local
+npm run dev                       # http://localhost:8787
+
+# frontend hot reload, with /api proxied to the dev Worker above:
+cd frontend && npm install && API_TARGET=http://127.0.0.1:8787 npm run dev
 # training logic (progression rules, 1RM, how a session is read back):
 cd frontend && npm test
 ```
@@ -41,8 +51,8 @@ cd frontend && npm test
 ## Guidelines
 
 - **Keep it dependency-light.** The frontend uses React + Router + Zustand and nothing else;
-  new deps (front or back) are a hard sell. `api/` has two (`@simplewebauthn/server` for passkeys,
-  `web-push` for notifications) — keep it near that.
+  new deps (front or back) are a hard sell. The Worker has two (`@simplewebauthn/server` for
+  passkeys, `web-push` for notifications) — keep it near that.
 - **Match the style.** Small components, clear names, comments only where the "why" isn't obvious.
   State lives in the Zustand store (`src/store`); pure helpers in `src/lib`.
 - **Don't commit** the exercise media (`media/`) or `data/` — they're gitignored.
