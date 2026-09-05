@@ -1,0 +1,82 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  // ---------------------------------------------------------------------------------------
+  // The GENERIC config. Nothing here is specific to any one deployment, which is what lets the
+  // "Deploy to Cloudflare" button in the README work: Cloudflare reads this file to discover
+  // what resources to provision, then writes the ids it created back into it.
+  //
+  // It lives at the repo root and not in worker/ because a Deploy button pointed at a
+  // subdirectory makes that subdirectory the entire new repository — worker/ would then have no
+  // frontend/ to build and serve.
+  //
+  // One deployment's own values (its hostname, its database, its policy choices) belong in
+  // instance.jsonc, not here. `npm run deploy:instance` merges the two. See docs/CONFIG.md.
+  // ---------------------------------------------------------------------------------------
+
+  "name": "opengym",
+  "main": "./worker/src/index.js",
+
+  // >= 2026-08-04 enables nodejs_compat and nodejs_compat_v2 implicitly, which is what makes
+  // node:crypto (createHmac / randomBytes / timingSafeEqual) and Buffer available unchanged.
+  "compatibility_date": "2026-09-02",
+  "observability": { "enabled": true },
+
+  // The whole point of serving the frontend from the same Worker: passkeys require a single
+  // origin, so there is no nginx and no second hostname. run_worker_first keeps /api/* off the
+  // asset path; everything else falls through to the built SPA.
+  "assets": {
+    "directory": "./frontend/dist/",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // database_id is a placeholder. The Deploy button provisions a real database and rewrites it;
+  // deploying by hand means running `npx wrangler d1 create opengym` and pasting the id here (or
+  // into instance.jsonc). `npm run deploy` applies worker/migrations/ before it ships the code.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opengym",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./worker/migrations"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "REST_TIMER", "class_name": "RestTimer" }]
+  },
+
+  // SQLite-backed is the only class the Workers Free plan can create, and it is what the alarms
+  // API needs here.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RestTimer"] }
+  ],
+
+  // Upstream scans every user every 10s. One minute is the finest granularity Cron Triggers
+  // offer, so a day reminder can land up to ~60s after its target minute instead of ~9s.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  // Non-secret configuration. Every value openGym reads has a working default in
+  // worker/src/runtime.js, so only the two that cannot be guessed are set here.
+  //
+  // RP_ID and ORIGIN must agree with the hostname the app is actually served from or every
+  // passkey ceremony fails — and changing RP_ID later invalidates every passkey already
+  // registered, so set them before anyone signs up. The remaining knobs (RP_NAME, SESSION_DAYS,
+  // INVITE_ONLY, ALLOW_GUEST, AUDIT_LOG, AUDIT_IP, AUDIT_MAX, AUDIT_DAYS, VAPID_SUBJECT) are
+  // documented in docs/CONFIG.md.
+  //
+  // Secrets are NOT here — SESSION_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and ADMIN_UIDS
+  // are set with `wrangler secret put`, or by the Deploy button from .dev.vars.example.
+  "vars": {
+    "RP_ID": "localhost",
+    "ORIGIN": "http://localhost:8787"
+  },
+
+  "dev": {
+    "port": 8787
+  }
+}

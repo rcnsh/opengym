@@ -7,10 +7,10 @@
 
    Needs a running dev server and a seeded user:
 
-     npx wrangler d1 execute opengym --local --file=schema.sql
-     npx wrangler d1 execute opengym --local --command \
+     npx wrangler d1 migrations apply DB --local
+     npx wrangler d1 execute DB --local --command \
        "INSERT OR REPLACE INTO users (id,name,created) VALUES ('testuid000001','tester','2026-01-01T00:00:00.000Z')"
-     npx wrangler dev &
+     npm run dev &
      npm run test:smoke
 
    ADMIN_UIDS must include testuid000001 in .dev.vars for the admin assertions to pass. */

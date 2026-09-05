@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyError } from './verify-error.js';
+import { verifyError } from '../src/verify-error.js';
 
 const cfg = { rpId: 'gym.example.com', origin: 'https://gym.example.com' };
 
@@ -8,7 +8,7 @@ test('names the configured values when the RP ID does not match', () => {
   const out = verifyError(new Error('Unexpected RP ID hash'), cfg);
   assert.match(out, /RP_ID=gym\.example\.com/);
   assert.match(out, /ORIGIN=https:\/\/gym\.example\.com/);
-  assert.match(out, /SELF_HOSTING\.md/);
+  assert.match(out, /CONFIG\.md/);
 });
 
 test('does the same for an origin mismatch, on login and on registration', () => {

@@ -4,8 +4,12 @@ Runs openGym on Cloudflare's free tier instead of a VPS with Docker Compose. One
 both the built frontend and the `/api/*` routes, so everything is a single origin — which WebAuthn
 requires, and which is the job nginx was doing in the Compose stack.
 
-This is an *additional* deployment target. `docker compose up -d` still builds and runs the
-original Node + nginx stack, unchanged.
+This fork has no other deployment target: the Compose stack is gone, and `api/` is kept only to
+diff against upstream ([api/README.md](../api/README.md)). The Worker's source lives in
+[`src/`](src) and its schema in [`migrations/`](migrations), but its **configuration lives at the
+repository root** — `wrangler.jsonc` and `instance.jsonc` — because a Deploy to Cloudflare button
+aimed at a subdirectory would make that subdirectory the entire repository, leaving no `frontend/`
+to build. See [docs/CONFIG.md](../docs/CONFIG.md).
 
 **What you get:** passkey login, cross-device sync, the admin dashboard, invite codes, the audit
 log, web push, rest-timer alerts and day reminders — the whole application, for £0, with no server
@@ -28,17 +32,21 @@ registered** — they lose access and must re-register. Pick the hostname you in
 `RP_ID` can only ever be the exact full hostname, permanently tied to a name Cloudflare controls
 rather than you. Use a domain on your own Cloudflare account.
 
-**3. `wrangler.jsonc` here is a live config, not a template.** It holds the real values for the
-instance at `opengym.rcn.sh`. Deploying it unchanged fails, because it points at a database and a
+**3. `instance.jsonc` is a live config, not a template.** `wrangler.jsonc` is generic and
+deployable by anyone; `instance.jsonc` beside it holds the real values for the instance at
+`opengym.rcn.sh`, and deploying *that* unchanged fails, because it points at a database and a
 domain you do not own. Change these first:
 
-| In `wrangler.jsonc` | Change to |
+| In `instance.jsonc` | Change to |
 | --- | --- |
 | `name` | whatever you want the Worker called |
 | `routes[0].pattern` | your hostname — or delete the whole `routes` block to try it on `*.workers.dev` first |
 | `d1_databases[0].database_id` | the id printed by step 2 below |
 | `vars.RP_ID` | your bare hostname, e.g. `gym.example.com` |
 | `vars.ORIGIN` | the full URL, e.g. `https://gym.example.com` — no trailing slash |
+
+Every other setting has a working default, so anything you leave out is a default you accepted.
+[docs/CONFIG.md](../docs/CONFIG.md) lists them all.
 
 `RP_ID`, `ORIGIN` and the hostname you actually serve from must all agree. If they don't, every
 passkey ceremony fails with an origin mismatch.
@@ -50,8 +58,10 @@ passkey ceremony fails with an origin mismatch.
 **1. Install**
 
 ```bash
-cd worker && npm install
+npm install
 ```
+
+From the repository root — that is where `wrangler.jsonc` and the Worker's dependencies live.
 
 On npm 11+ this stops with *"packages have install scripts not yet covered by allowScripts"*.
 Wrangler cannot run without them — `workerd` is Cloudflare's runtime and `esbuild` its bundler:
@@ -66,13 +76,16 @@ npm install-scripts approve workerd && npm install-scripts approve esbuild && np
 npx wrangler d1 create opengym
 ```
 
-Copy the printed `database_id` into `wrangler.jsonc`.
+Copy the printed `database_id` into `instance.jsonc`.
 
 **3. Create the tables**
 
 ```bash
-npx wrangler d1 execute opengym --remote --file=schema.sql
+npx wrangler d1 migrations apply DB --remote
 ```
+
+`npm run deploy` does this for you on every deploy, so this step is only needed if you want the
+tables before the first one. Migrations are `IF NOT EXISTS` throughout and safe to re-run.
 
 **4. Set the secrets**
 
@@ -94,7 +107,7 @@ Feed the first printed line to `npx wrangler secret put VAPID_PUBLIC_KEY` and th
 **5. Build the frontend**
 
 ```bash
-cd ../frontend && npm install && npm run build:cloudflare
+npm run build
 ```
 
 The Worker serves `frontend/dist/` as static assets, so this must happen **before** you deploy,
@@ -108,8 +121,11 @@ baked into the bundle, so setting them at runtime does nothing.
 **6. Deploy**
 
 ```bash
-cd ../worker && npx wrangler deploy
+npm run deploy:instance
 ```
+
+That merges `instance.jsonc` over `wrangler.jsonc`, applies any pending migrations and deploys the
+result. `npm run deploy` does the same with the generic config alone, ignoring `instance.jsonc`.
 
 The `routes` block attaches your custom domain and creates the DNS record, so there is nothing to
 do in the dashboard. Two things to know:
@@ -130,16 +146,16 @@ invite, minting an invite needs an admin, and being an admin needs an account.
 Break it by inserting one invite by hand:
 
 ```bash
-npx wrangler d1 execute opengym --remote --command "INSERT INTO invites (code, note, created) VALUES ('$(node -e "console.log(require('crypto').randomBytes(8).toString('hex').toUpperCase())")','bootstrap',datetime('now'))"
+npx wrangler d1 execute DB --remote --command "INSERT INTO invites (code, note, created) VALUES ('$(node -e "console.log(require('crypto').randomBytes(8).toString('hex').toUpperCase())")','bootstrap',datetime('now'))"
 ```
 
 That prints the code it inserted. Register in a browser with it, then find your uid:
 
 ```bash
-npx wrangler d1 execute opengym --remote --command "SELECT id, name FROM users"
+npx wrangler d1 execute DB --remote --command "SELECT id, name FROM users"
 ```
 
-Make yourself an admin — as a **secret**, not a var in `wrangler.jsonc`, which is public in this
+Make yourself an admin — as a **secret**, not a var in `instance.jsonc`, which is public in this
 repo and would name the admin account to anyone reading it:
 
 ```bash
@@ -157,14 +173,14 @@ account does not change who is an admin.
 ## Local development
 
 ```bash
-cd worker
-npx wrangler d1 execute opengym --local --file=schema.sql
-npx wrangler dev
+npx wrangler d1 migrations apply DB --local
+npm run dev
 ```
 
-Local secrets go in `worker/.dev.vars` (gitignored). Set `RP_ID=localhost` and
-`ORIGIN=http://localhost:8787` there — passkeys work over plain HTTP on localhost, and nowhere
-else.
+Local secrets go in `.dev.vars` at the repository root (gitignored) — copy `.dev.vars.example`.
+Set `RP_ID=localhost` and `ORIGIN=http://localhost:8787` there; passkeys work over plain HTTP on
+localhost, and nowhere else. `.dev.vars` also overrides `vars`, which is how local runs pick up
+settings the generic `wrangler.jsonc` leaves at their defaults.
 
 There is an integration test covering everything the passkey ceremony sits in front of — session
 verification and revocation, the chunked state round-trip, presence, invites, the admin routes and
@@ -172,33 +188,51 @@ the audit log. It mints its own session cookies, so it needs a seeded user and `
 `.dev.vars`:
 
 ```bash
-npx wrangler d1 execute opengym --local --command \
+npx wrangler d1 execute DB --local --command \
   "INSERT OR REPLACE INTO users (id,name,created) VALUES ('testuid000001','tester','2026-01-01T00:00:00.000Z')"
 npm run test:smoke
 ```
 
-CI (`.github/workflows/worker.yml`) runs the bundle and this test on every push touching
-`worker/`, with no Cloudflare credentials.
+It also needs `INVITE_ONLY=1` in `.dev.vars` for the invite assertions, and it is not idempotent:
+`logout/all` bumps the seeded user's session version, so a second run against the same local
+database needs `UPDATE users SET sv=0`.
+
+`npm test` is the fast half — the push-notification copy, the passkey error message, and the
+config merge that decides which hostname and database a deploy lands on.
+
+CI (`.github/workflows/worker.yml`) runs both, plus a dry-run bundle of each config, on every push
+touching the Worker, with no Cloudflare credentials.
 
 ---
 
 ## Continuous deployment
 
-This instance uses [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
-pushing to `main` builds and deploys automatically. Set it up after your first manual deploy —
-the Worker has to exist before you can connect a repository to it.
+**Not connected on this instance yet.** Every deployment so far has come from `wrangler` on a
+laptop; the Cloudflare API reports no build configuration and no builds for this Worker. Until
+that changes, a push to `main` ships nothing — deploy by hand with `npm run deploy:instance`.
+
+To connect it, use [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+pushing to `main` then builds and deploys automatically. It has to come after a manual deploy —
+the Worker must exist before a repository can be connected to it — and it authorises through a
+GitHub App in the dashboard, which is why there is no API token for it in this repo and no way to
+script the connection.
 
 Workers & Pages → your Worker → Settings → Builds → Connect, then:
 
 | Setting | Value |
 | --- | --- |
-| Root directory | `worker` |
-| Build command | `cd ../frontend && npm ci && npm run build:cloudflare` |
-| Deploy command | `npx wrangler deploy` (the default) |
+| Root directory | *(repository root)* |
+| Build command | `npm run build` |
+| Deploy command | `npm run deploy:instance` |
 | Production branch | `main` |
 
 The build command is not optional: `frontend/dist` is gitignored, so without it the build fails
 with *"the directory specified by the assets.directory field does not exist"*.
+
+The deploy command matters just as much. `npx wrangler deploy` would deploy the **generic**
+config — no custom domain, `RP_ID` of `localhost`, and a placeholder database id — which is a
+working Worker pointed at nothing. `npm run deploy:instance` is what folds `instance.jsonc` back
+in, and it applies pending migrations first.
 
 Cloudflare authenticates by pulling through a GitHub App you authorise in its dashboard, so no
 Cloudflare API token is stored in the repository. Free plan gives 3,000 build minutes a month;

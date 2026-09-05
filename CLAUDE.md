@@ -4,28 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-openGym is a self-hosted gym & body-weight tracker PWA. Two containers (`api` + `web`) plus a
-`./data` folder the user owns — no third-party account, no telemetry. Passkey (WebAuthn) login,
-installable as a home-screen app, optional Capacitor shells for standalone Android/iOS builds.
+openGym is a self-hosted gym & body-weight tracker PWA. In this fork it is one Cloudflare Worker
+serving both the built frontend and `/api/*` from a single origin, over a D1 database the user
+owns — no third-party account, no telemetry. Passkey (WebAuthn) login, installable as a
+home-screen app, optional Capacitor shells for standalone Android/iOS builds.
 License: AGPL-3.0-or-later.
 
 ## Project layout
 
 ```
-frontend/  React 19 + Vite app (src/views, src/components, src/store, src/lib). Builds to static files.
-           android/ + ios/ are the Capacitor shells for the standalone mobile app (docs/MOBILE.md).
-worker/    THE DEPLOYMENT. Cloudflare Workers: same route table as api/server.js behind a
+wrangler.jsonc  GENERIC Worker config — bindings, cron, compatibility date, nothing instance-
+                specific. Lives at the root because a Deploy to Cloudflare button aimed at a
+                subdirectory makes that subdirectory the whole repo (no frontend/ to build).
+instance.jsonc  THIS deployment: route, D1 database_id, RP_ID/ORIGIN, policy vars.
+                `npm run deploy:instance` deep-merges it over wrangler.jsonc into the gitignored
+                wrangler.instance.json and deploys that. `npm run deploy` ignores it.
+package.json    the Worker's manifest: its two runtime deps, wrangler, and every deploy script.
+                There is no worker/package.json — wrangler runs from the root.
+worker/    THE DEPLOYMENT. src/ is the Worker: same route table as api/server.js behind a
            (req, res) shim, D1 for storage, a Durable Object alarm for the rest timer, a Cron
-           Trigger for day reminders. src/store.js is the D1 layer. See worker/README.md.
-api/       REFERENCE ONLY — not deployed, not runnable here (its Dockerfile is gone). server.js
+           Trigger for day reminders. src/store.js is the D1 layer; src/push-messages.js and
+           src/verify-error.js came from api/ and are live code. migrations/ is the D1 schema
+           (`wrangler d1 migrations apply DB`). test/ has the node:test units and smoke.mjs.
+           See worker/README.md.
+frontend/  React 19 + Vite app (src/views, src/components, src/store, src/lib). Builds to static
+           files the Worker serves. android/ + ios/ are the Capacitor shells (docs/MOBILE.md).
+api/       REFERENCE ONLY — not deployed, not runnable, and now genuinely 100% dead. server.js
            is the upstream Node implementation the Worker was ported from; keep it to diff
-           against when pulling upstream releases. push-messages.js and verify-error.js are the
-           exception: worker/src imports both directly, so they ARE live code.
+           against when pulling upstream releases. Its two local imports dangle on purpose —
+           they moved to worker/src/. See api/README.md.
 mcp/       optional MCP server — read-only stdio bridge exposing a user's workouts/1RM/muscle
            balance to LLM clients (Claude Desktop, Cursor…). Two backends: ./data files, or
            HTTPS against a Cloudflare instance with a pairing token. Imports frontend/src/lib.
-scripts/   generators for the committed exercise-name and instruction data. Rarely run.
-docs/      API.md, DATA_IMPORTS.md, MOBILE.md.
+scripts/   generators for the committed exercise-name and instruction data (rarely run), plus
+           wrangler-instance.mjs — the config merge, which has tests beside it.
+docs/      CONFIG.md (every var and secret), API.md, DATA_IMPORTS.md, MOBILE.md.
 ```
 
 **This fork removed the Docker Compose stack.** `docker-compose.yml`, `web/`, the Dockerfiles,
@@ -36,10 +49,12 @@ shared, so API and training-logic changes need applying in both places.
 ## Commands
 
 ```bash
-# The Worker, locally (miniflare + local D1). Secrets go in worker/.dev.vars.
-cd worker && npx wrangler d1 execute opengym --local --file=schema.sql && npx wrangler dev
-cd worker && npm run test:smoke     # integration test; needs wrangler dev running
-cd worker && npx wrangler deploy    # normally automatic via Workers Builds on push to main
+# The Worker, locally (miniflare + local D1). Secrets go in .dev.vars at the repo root.
+npm install && npx wrangler d1 migrations apply DB --local && npm run dev
+npm test                    # node:test — push copy, verify-error, the config merge
+npm run test:smoke          # integration test; needs `npm run dev` running, and INVITE_ONLY=1
+npm run config              # write wrangler.instance.json without deploying
+npm run deploy:instance     # merge + migrate + deploy (manual — Workers Builds is not connected)
 
 # Frontend dev server (hot reload), proxies /api to :3000
 cd frontend && npm install && npm run dev
@@ -77,11 +92,12 @@ fork:
   hand.
 - `.gitea/workflows/` really is dormant — no Gitea remote is configured.
 
-The Cloudflare deployment is continuous, via Cloudflare Workers Builds (not GitHub Actions):
-pushing to `main` builds the frontend and runs `wrangler deploy` from `worker/`. Cloudflare pulls
-through a GitHub App, so there is no Cloudflare API token in the repo. The `Worker` Actions
-workflow runs alongside it rather than gating it — a commit that fails the smoke test still
-deploys. See `worker/README.md`.
+**Cloudflare Workers Builds is NOT connected** (checked 2026-09-05: no build configuration and
+zero builds for the `opengym` Worker; every deployment's source is `wrangler`). Deploys are manual
+— `npm run deploy:instance` from the repo root — so a push to `main` currently ships nothing.
+`worker/README.md` has the settings to connect it; the connection itself goes through a GitHub App
+in the Cloudflare dashboard and cannot be scripted. Once connected, the `Worker` Actions workflow
+runs alongside it rather than gating it — a commit that fails the smoke test still deploys.
 
 ## Architecture
 
@@ -113,9 +129,9 @@ deploys. See `worker/README.md`.
   `frontend/ios` (see `docs/MOBILE.md`); `mobile.js` in `lib/` gates native-only behavior (file
   persistence, local notifications, wake lock) behind a `MOBILE` flag.
 
-### API (`api/server.js`)
+### API (`worker/src/index.js`, ported from `api/server.js`)
 
-Single file, no framework, plain `node:http`. Requests are dispatched through a `routes` object
+The reference implementation is a single file, no framework, plain `node:http`. Requests are dispatched through a `routes` object
 keyed by `'METHOD /path'` (e.g. `routes['GET /api/health']`) matched against `req.method + ' ' +
 url.pathname` — add a new endpoint by adding a key here. State is two flat JSON files under
 `DATA_DIR` (`db.json`: users/credentials/subscriptions/invites; `state-<uid>.json`: per-user
@@ -140,10 +156,12 @@ side (Claude Desktop / Cursor).
 
 WebAuthn passkeys are bound to an exact hostname (`RP_ID`) and require HTTPS (localhost excepted)
 — this shapes a lot of the API and Settings code (`RP_ID`/`ORIGIN` env vars, guest-mode fallback
-when neither is available). Read `docs/SELF_HOSTING.md` before touching auth, session, or
-notification code; it documents the exact env-var contract (`RP_ID`, `ORIGIN`, `PORT`,
-`WEB_PORT`, `NGINX_PORT`, `BACKEND`, `SESSION_DAYS`, `ADMIN_UIDS`, `INVITE_ONLY`, `ALLOW_GUEST`,
-`AUDIT_*`, `VAPID_SUBJECT`) that real deployments depend on.
+when neither is available). Read `docs/CONFIG.md` before touching auth, session, or notification
+code; it documents the exact contract (`RP_ID`, `ORIGIN`, `SESSION_DAYS`, `ADMIN_UIDS`,
+`INVITE_ONLY`, `ALLOW_GUEST`, `AUDIT_*`, `VAPID_SUBJECT`) that real deployments depend on, and
+which of those are vars and which are secrets. Upstream's `docs/SELF_HOSTING.md` was dropped with
+the Docker stack; the port/proxy variables it documented (`PORT`, `WEB_PORT`, `NGINX_PORT`,
+`BACKEND`) have no meaning here.
 
 ### Deploy
 
@@ -153,9 +171,12 @@ is what passkeys require and what nginx used to provide. Storage is D1: `users`,
 `presence`, `audit`. `SESSION_SECRET`, the VAPID pair and `ADMIN_UIDS` are Worker secrets, not
 vars — Cloudflare stores them write-only, so they cannot be read back.
 
-Pushing to `main` builds and deploys via Cloudflare Workers Builds. The frontend must be built
-first (`npm run build:cloudflare`, which points media at jsDelivr); the build command does that.
-`worker/README.md` has the whole contract, including the free-tier row limits worth watching.
+Deploys are manual today (see above). If Workers Builds is connected later, the frontend must be
+built first (`npm run build`, which points media at jsDelivr); the build command does that, and the
+deploy command is `npm run deploy:instance` so `instance.jsonc` is folded back in — plain
+`npx wrangler deploy` would ship the generic config with `RP_ID=localhost` and a placeholder
+database id. `worker/README.md` has the whole contract, including the free-tier row limits worth
+watching. Every variable and secret is in `docs/CONFIG.md`.
 
 ## Guidelines from CONTRIBUTING.md worth knowing before changing code
 

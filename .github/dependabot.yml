@@ -42,30 +42,17 @@ updates:
       - dependency-name: '@capacitor/*'
         update-types: ['version-update:semver-major']
 
-  # Backend — api/package.json (@simplewebauthn/server, web-push)
-  - package-ecosystem: npm
-    directory: /api
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 3
-    groups:
-      api:
-        patterns: ['*']
-        update-types: ['minor', 'patch']
-      # Two dependencies, but one of them verifies passkeys — a major there is worth reading on
-      # its own rather than alongside anything else.
-      api-major:
-        patterns: ['*']
-        update-types: ['major']
+  # FORK: api/ is no longer watched. Its package.json is kept verbatim so an upstream release can
+  # be diffed against it — bumping it here would push it out of step with upstream and give
+  # nothing back, because nothing in api/ runs or ships. The Worker below is what deploys.
 
-  # FORK: the Docker ecosystems are gone. This fork deploys to Cloudflare Workers, so there is
-  # no api/Dockerfile or web/Dockerfile left to bump a base image in. The Worker below replaced
-  # them as the thing that actually ships.
+  # FORK: the Docker ecosystems are gone too. There is no api/Dockerfile or web/Dockerfile left
+  # to bump a base image in.
 
-  # The Worker — worker/package.json (@simplewebauthn/server, web-push, wrangler).
-  # This is what is deployed, so its bumps matter more than api/'s, which is now reference only.
+  # The Worker — the root package.json (@simplewebauthn/server, web-push, wrangler).
+  # This is what is deployed, so its bumps are the ones that matter.
   - package-ecosystem: npm
-    directory: /worker
+    directory: /
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
