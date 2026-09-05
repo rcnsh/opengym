@@ -1,0 +1,24 @@
+// Deploy openGym to Cloudflare Workers as a static app — what the "Deploy to Cloudflare"
+// button in the README runs.
+//
+// Workers cannot run the Node backend (api/): passkey sign-in, sync across devices and the
+// admin dashboard all need a real server with a data directory behind them. So this deploys
+// the same backend-less build that runs on GitHub Pages — guest mode, everything in this
+// browser's localStorage, seeded with example data you can reset or replace. For the full
+// thing, self-host with Docker: see docs/SELF_HOSTING.md.
+//
+// The ~140 MB of exercise images and GIFs is not uploaded; build:demo points them at the
+// same pinned jsDelivr copy of the dataset the mobile app uses.
+{
+  "name": "opengym",
+  "compatibility_date": "2026-09-05",
+
+  // wrangler runs this before uploading, so `npx wrangler deploy` is the whole deploy.
+  "build": { "command": "npm run build:demo" },
+
+  "assets": {
+    "directory": "./dist",
+    // Client-side routing: a path with no file behind it serves index.html, not a 404.
+    "not_found_handling": "single-page-application"
+  }
+}

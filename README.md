@@ -45,6 +45,12 @@ No signup, nothing to install — it runs entirely in your browser on example da
 <sub>There's no server behind the demo, so passkey sign-in, sync across devices and the
 admin dashboard only exist in a self-hosted instance.</sub>
 
+<br>
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rcnsh/opengym/tree/main/frontend)
+
+<sub>Same app, same limits, on your own Cloudflare account and your own URL — free plan, no card.</sub>
+
 </div>
 
 ## Why
@@ -115,6 +121,25 @@ mobile app is the install-and-done flavor.
 - **iPhone:** Apple doesn't allow installing apps outside the App Store, so there is no iOS
   download. Self-host and add it to your home screen from Safari (it's a full PWA), or build
   the native app onto your own device from Xcode — see **[docs/MOBILE.md](docs/MOBILE.md)**.
+
+## Deploy to Cloudflare (no server either)
+
+The **Deploy to Cloudflare** button above copies `frontend/` into a new repo in your GitHub
+or GitLab account and puts the app on Workers as static files, under a `*.workers.dev` URL
+(or your own domain). Nothing to install and nothing to run — but Workers can't host the Node
+backend, so what you get is the demo build: **guest mode, data in that browser's
+`localStorage`, no passkeys and no sync**, starting from the example history. Want your data on your own box, synced across your phone
+and laptop? That's the Docker setup above.
+
+Deploying it yourself instead of through the button:
+
+```bash
+cd frontend
+npx wrangler deploy      # builds and uploads; wrangler.jsonc has the rest
+```
+
+The exercise images and GIFs (~140 MB) aren't uploaded — the demo build loads them from a
+pinned copy of the dataset on jsDelivr, same as the mobile app.
 
 ## How it works
 
