@@ -1,8 +1,10 @@
 /* opengym-mcp state — read-only, with two backends.
 
-   FILE (default): reads ./data/state-<uid>.json + db.json straight off disk, cached with an
-   fs.watch + mtime fallback so a session the api server just wrote is visible on the next tool
-   call without a restart. This is the Docker Compose deployment.
+   FILE (default): reads state-<uid>.json + db.json straight off disk, cached with an fs.watch
+   + mtime fallback so a session written under us is visible on the next tool call without a
+   restart. This fork's deployment never writes those files — they are upstream's on-disk
+   layout, so this backend serves a backup, an exported state document, or an upstream Node
+   instance still running somewhere.
 
    REMOTE (set OPENGYM_URL): fetches the same two things over HTTPS from a running instance,
    authenticated with a Bearer token. Needed for the Cloudflare deployment, where the state lives

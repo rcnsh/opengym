@@ -4,14 +4,15 @@ A [Model Context Protocol](https://modelcontextprotocol.io) bridge that lets an 
 application (Claude Desktop, Cursor, Cline, Continue, etc.) read your openGym profile —
 routines, workouts, body-weight log, estimated 1RMs, and muscle balance.
 
-It is read-only and runs locally as a stdio process spawned by the LLM client, adding no new
-container. It works against either deployment:
+It is read-only and runs locally as a stdio process spawned by the LLM client — nothing to
+deploy, no port to open, no change to your instance. It has two backends:
 
-- **Docker Compose** — reads the `state-<uid>.json` files in `./data` straight off disk. No
-  authentication, because the files are already on the machine.
-- **Cloudflare Workers** — fetches the same data over HTTPS from your instance, since there is
-  no `./data` directory when the state lives in D1. Authenticated with an ordinary openGym
-  session token you mint from Settings.
+- **Your Cloudflare instance, over HTTPS** — fetches your profile from the Worker. This is the
+  normal setup for this fork: the state lives in D1, so there is no data directory to read.
+  Authenticated with an ordinary openGym session token you mint from Settings.
+- **Local files** — reads a `state-<uid>.json` state document off disk. No authentication,
+  because the file is already on the machine. Use it against a backup, a JSON export from
+  Settings, or the `./data` directory of an upstream (Node + JSON files) openGym instance.
 
 Either way the LLM never sees passkeys, VAPID keys or session secrets: it reads exactly the
 per-user state the app itself syncs, and nothing else.
@@ -35,29 +36,16 @@ npm install
 
 Two backends. Setting `OPENGYM_URL` selects the remote one; leaving it unset reads from disk.
 
-**Docker Compose — reads `./data` directly**
+**Cloudflare instance — reads over HTTPS**
 
-Pick the profile to answer for; its user id is in `./data/db.json` under `users[].id`:
-
-```bash
-# single-user instance (the common self-hosted case) — auto-detected:
-node src/index.js
-
-# multi-user instance, or just to be explicit:
-OPENGYM_UID=<your-uid> OPENGYM_DATA=/path/to/openGym/data node src/index.js
-```
-
-**Cloudflare Workers — reads over HTTPS**
-
-There is no `./data` directory on this deployment; the state lives in D1. Point the server at
-your instance and give it a session token:
+Point the server at your instance and give it a session token:
 
 ```bash
 OPENGYM_URL=https://gym.example.com OPENGYM_TOKEN=<token> node src/index.js
 ```
 
-Mint the token from a signed-in browser: **Settings → pair a device**, which shows a one-shot
-code, then redeem it:
+Mint the token from a signed-in browser: **Settings → Pair the mobile app**, which shows a
+one-shot code good for five minutes, then redeem it:
 
 ```bash
 curl -s -X POST https://gym.example.com/api/pair/redeem \
@@ -75,6 +63,27 @@ exactly that on startup — mint a new code and swap it in.
 **Treat the token as a password.** It grants read access to that profile, and write access to it
 through the API, for as long as it is valid. Keep it out of shell history and out of git.
 
+**Local files — reads a state document off disk**
+
+The layout is upstream's: one `state-<uid>.json` per profile, optionally alongside a `db.json`
+holding the profile list. A Cloudflare instance writes neither — its state is in D1 — so this
+backend is for data that is already on your disk: a backup of an upstream `./data` directory, a
+directory served by an upstream Node instance you still run, or a **Settings → Backup export**
+JSON saved as `state-<uid>.json` (the export file *is* the state document, byte for byte).
+
+```bash
+# a directory holding exactly one state-<uid>.json — the uid is auto-detected:
+OPENGYM_DATA=/path/to/data node src/index.js
+
+# several profiles in one directory, or just to be explicit:
+OPENGYM_UID=<your-uid> OPENGYM_DATA=/path/to/data node src/index.js
+```
+
+`OPENGYM_DATA` defaults to `./data` under the working directory. `db.json` is optional: it only
+supplies the profile's display name, and lets the uid be resolved when a profile exists but has
+never synced a state document. With several profiles present, the server refuses to guess and
+lists the ids to choose between.
+
 ### 3. Register with your LLM client
 
 Add the server to your LLM client's MCP config. For Claude Desktop, edit
@@ -87,16 +96,15 @@ Add the server to your LLM client's MCP config. For Claude Desktop, edit
       "command": "node",
       "args": ["/absolute/path/to/openGym/mcp/src/index.js"],
       "env": {
-        "OPENGYM_DATA": "/absolute/path/to/openGym/data",
-        "OPENGYM_UID": "<your-uid>"   // optional — auto-detected if you have one profile
+        "OPENGYM_URL": "https://gym.example.com",
+        "OPENGYM_TOKEN": "<token from the pairing redeem above>"
       }
     }
   }
 }
 ```
 
-Against a Cloudflare instance, swap the `env` block for the remote pair — the `command` and
-`args` are identical:
+To read local files instead, swap the `env` block — the `command` and `args` are identical:
 
 ```jsonc
 {
@@ -105,8 +113,8 @@ Against a Cloudflare instance, swap the `env` block for the remote pair — the 
       "command": "node",
       "args": ["/absolute/path/to/openGym/mcp/src/index.js"],
       "env": {
-        "OPENGYM_URL": "https://gym.example.com",
-        "OPENGYM_TOKEN": "<token from the pairing redeem above>"
+        "OPENGYM_DATA": "/absolute/path/to/your/data",
+        "OPENGYM_UID": "<your-uid>"   // optional — auto-detected if there's one profile
       }
     }
   }
@@ -152,15 +160,16 @@ dependencies landed in `frontend/`, no public exports changed.
 
 ## Design constraints honoured
 
-- **One runtime dependency beyond the MCP SDK:** none. No database driver, no HTTP framework.
-- **No new container.** stdio transport is spawned by the LLM client; nothing to add to
-  `docker-compose.yml`.
-- **No new auth mechanism.** On Docker the filesystem is the boundary, same as `docker compose`
-  running on your own box. On Cloudflare it reuses the existing device-pairing token rather than
-  inventing anything. No passkey material, VAPID keys or session secrets ever cross either.
+- **Two runtime dependencies:** the MCP SDK and `zod` for the tool schemas. No database driver,
+  no HTTP framework, no Cloudflare SDK.
+- **Nothing added to the deployment.** The stdio transport is spawned by the LLM client, so the
+  Worker is untouched — no new route, no new binding, no new D1 table.
+- **No new auth mechanism.** On local files the filesystem is the boundary. Against a Cloudflare
+  instance it reuses the existing device-pairing token rather than inventing anything. No passkey
+  material, VAPID keys or session secrets ever cross either.
 - **No telemetry.** Exits when the LLM client disconnects. The only network traffic it can make
-  is to your own instance, and only when you set `OPENGYM_URL` — the default backend reads
-  `./data/*.json` and opens no sockets at all.
+  is to your own instance, and only when you set `OPENGYM_URL` — the local-file backend reads
+  JSON off disk and opens no sockets at all.
 
 ## Tests
 
@@ -168,17 +177,17 @@ dependencies landed in `frontend/`, no public exports changed.
 cd mcp && npm test
 ```
 
-32 cases seeding state from `frontend/src/lib/demoSeed.js` (the same deterministic fixture
+45 cases seeding state from `frontend/src/lib/demoSeed.js` (the same deterministic fixture
 the public demo runs on). Pins JSON shape and the user-facing edge cases: rest-day override,
 missing routine, zero-workout history, no synced state, superset links, three 1RM formulas.
 "Today" is pinned via `vi.useFakeTimers({ now: ..., toFake: ['Date'] })` so date-dependent
 tools see consistent values regardless of when the suite runs. The pure lib functions have
-their own 92 tests in `frontend/src/lib/*.test.js`.
+their own suite in `frontend/src/lib/*.test.js`.
 
 ## Roadmap
 
-- **Done:** read-only stdio, 8 tools, `./data` access, and an HTTPS backend for the Cloudflare
-  deployment authenticated with a device-pairing token.
+- **Done:** read-only stdio, 8 tools, the local-file backend, and an HTTPS backend for the
+  Cloudflare deployment authenticated with a device-pairing token.
 - **Phase 1.5:** a `progression_next` tool (what does the policy prescribe next?). No new
   deps; small surface area.
 - **Phase 2:** read+write. The remote backend already carries a token that the API accepts for
@@ -186,8 +195,9 @@ their own 92 tests in `frontend/src/lib/*.test.js`.
   would be doing a read-modify-write of the whole state document against a web UI doing the same,
   and `PUT /api/data` is last-write-wins. Tools: `log_workout`, `add_bodyweight`, `edit_routine`,
   `assign_weekday`, `override_day`.
-- **Phase 3:** Streamable HTTP transport, opt-in 4th container in `docker-compose.yml`. Same
-  tool implementations, second transport — the MCP SDK supports both behind one tool registration.
+- **Phase 3:** Streamable HTTP transport, so a client that cannot spawn a local process reaches
+  the bridge over the network instead of over stdio. Same tool implementations, second transport
+  — the MCP SDK supports both behind one tool registration.
 
 ## License
 
