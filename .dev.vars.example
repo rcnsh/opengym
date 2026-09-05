@@ -1,0 +1,24 @@
+# Worker secrets. Cloudflare stores them write-only and cannot show them to you again, so keep a
+# copy of whatever you generate. Copy this file to .dev.vars for `npm run dev`; for a deployed
+# Worker set each one with `npx wrangler secret put <NAME>`.
+
+# Signs session cookies. Any long random string: `openssl rand -hex 32`.
+# Losing it signs every user out of every device.
+SESSION_SECRET=""
+
+# Web Push, for rest-timer alerts and workout-day reminders. Generate the pair with
+# `npx web-push generate-vapid-keys`. Losing them kills every existing subscription.
+# Leave both empty to run without push notifications.
+VAPID_PUBLIC_KEY=""
+VAPID_PRIVATE_KEY=""
+
+# Comma-separated user ids that get the admin dashboard. Leave empty on a fresh instance — you
+# cannot know your own id until you have registered a profile. See worker/README.md.
+# A uid is not a credential (it is useless without the matching passkey), but it is kept out of
+# the repo so a reader cannot tell which account is worth attacking.
+ADMIN_UIDS=""
+
+# .dev.vars also overrides anything in `vars` for `wrangler dev`, which is how local development
+# picks up settings the generic wrangler.jsonc deliberately leaves at their defaults. The smoke
+# test in worker/test/ needs invite-only on to exercise the invite paths:
+INVITE_ONLY=1

@@ -11,8 +11,8 @@
 >
 > **The Docker Compose stack has been removed from this fork.** `docker-compose.yml`, `web/` and
 > the Dockerfiles are gone; Cloudflare is the only deployment target here. `api/server.js` is
-> kept as the reference the Worker was ported from, and two of its helpers are imported by the
-> Worker directly, but it is not run. If you want the original self-hosted stack, use upstream.
+> kept only as the reference the Worker was ported from — see [api/README.md](api/README.md).
+> If you want the original self-hosted stack, use upstream.
 >
 > Upstream is [openGym by Duarte Santos](https://gitlab.com/DuarteSantos8/opengym).
 > Licensed AGPL-3.0-or-later, like upstream — see [LICENSE](LICENSE).
@@ -40,6 +40,14 @@ No account on someone else's server, no subscription, no ads. Runs free on Cloud
 <br>
 [![Worker CI](https://github.com/rcnsh/opengym/actions/workflows/worker.yml/badge.svg)](https://github.com/rcnsh/opengym/actions/workflows/worker.yml)
 [![Tests](https://github.com/rcnsh/opengym/actions/workflows/test.yml/badge.svg)](https://github.com/rcnsh/opengym/actions/workflows/test.yml)
+
+<br>
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rcnsh/opengym)
+
+<sub>Forks the repo to your account, provisions the D1 database and deploys it — then read
+<a href="#quick-start-self-host">Quick start</a>, because <b>passkeys will not work until you point
+<code>RP_ID</code> at a hostname you own</b>.</sub>
 
 </div>
 
@@ -120,16 +128,29 @@ the API from a single origin, D1 for storage. No server to run, no Docker, no mo
 You need a Cloudflare account and a domain on it. Passkeys are bound to the hostname, and
 `*.workers.dev` will not do — see [worker/README.md](worker/README.md) for why.
 
+**The quick way.** [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/rcnsh/opengym)
+copies the repo to your GitHub account, creates the D1 database, prompts you for the secrets and
+deploys, with every later push building automatically.
+
+It cannot know your hostname, though, so it deploys with `RP_ID=localhost` and passkeys will not
+work yet. Add your custom domain to the Worker, then set `RP_ID` and `ORIGIN` to it — in the
+`vars` block of [`wrangler.jsonc`](wrangler.jsonc) in your new repo — and push. Do that **before
+anyone signs up**: changing `RP_ID` later invalidates every passkey already registered. The
+`instance.jsonc` you inherited is this instance's, and `npm run deploy` ignores it; see
+[docs/CONFIG.md](docs/CONFIG.md) if you would rather keep your settings there instead.
+
+**By hand**, if you would rather see each step:
+
 ```bash
-git clone https://github.com/rcnsh/opengym
-cd opengym/worker && npm install
-npx wrangler d1 create opengym          # put the printed id in wrangler.jsonc
-npx wrangler d1 execute opengym --remote --file=schema.sql
+git clone https://github.com/rcnsh/opengym && cd opengym && npm install
+npx wrangler d1 create opengym              # put the printed id in instance.jsonc
+$EDITOR instance.jsonc                      # your hostname, your database, your policy
+npm run deploy:instance                     # merges it in, migrates, deploys
 ```
 
-Then set three secrets, build the frontend, and deploy. The full sequence — including the five
-values in `wrangler.jsonc` you must change first, and how to create the first account on an
-invite-only instance — is in **[worker/README.md](worker/README.md)**. Budget fifteen minutes.
+Either way, the full sequence — the values in [`instance.jsonc`](instance.jsonc) you must change,
+the four secrets, and how to create the first account on an invite-only instance — is in
+**[worker/README.md](worker/README.md)**. Budget fifteen minutes.
 
 The exercise media (~140 MB of images and GIFs) is not downloaded or hosted: the Cloudflare
 build points at jsDelivr instead, pinned to a commit.
@@ -162,61 +183,70 @@ mobile app is the install-and-done flavor.
 
 ## How it works
 
+One Worker is the whole backend. It serves the built frontend as static assets and answers
+`/api/*` itself, so the app and its API share **one origin** — which is what passkeys require,
+and what nginx was doing in the Docker stack this fork removed.
+
 ```
-┌─────────────┐        ┌──────────────────────────────┐
-│  Your phone │──HTTPS─▶│  web  (nginx)                │
-│  / laptop   │        │   ├─ serves the built app    │
-└─────────────┘        │   └─ proxies /api ──────────┐│
-                       └──────────────────────────────┘│
-                                                        ▼
-                                        ┌──────────────────────────┐
-                                        │  api  (Node + WebAuthn)  │
-                                        │   └─ ./data (JSON files) │
-                                        └──────────────────────────┘
+┌─────────────┐         ┌────────────────────────────────────────────┐
+│  Your phone │──HTTPS──▶│  opengym  (one Cloudflare Worker)          │
+│  / laptop   │         │   ├─ /api/*  → WebAuthn, sync, admin       │
+└─────────────┘         │   └─ /*      → the built React app         │
+                        └───────┬─────────────┬──────────────┬───────┘
+                                ▼             ▼              ▼
+                          ┌──────────┐  ┌───────────┐  ┌───────────┐
+                          │ D1       │  │ Durable   │  │ Cron      │
+                          │ profiles │  │ Object    │  │ Trigger   │
+                          │ + state  │  │ rest timer│  │ reminders │
+                          └──────────┘  └───────────┘  └───────────┘
 ```
 
-- **frontend/** — React + Vite (React Router + Zustand), built to static files **inside Docker**
-- **api/** — Node with no framework, two dependencies (`@simplewebauthn/server` for passkeys, `web-push` for notifications), storing everything as plain JSON files under `./data`
-- **web/** — a multi-stage image that builds the frontend and serves it with nginx, proxying `/api` to the backend so it's all on **one origin** (passkeys require this)
+| | |
+| --- | --- |
+| [`wrangler.jsonc`](wrangler.jsonc) | the generic config — what the Deploy button reads |
+| [`instance.jsonc`](instance.jsonc) | **one deployment's own values**: hostname, database, policy |
+| [`worker/src/`](worker/src) | the Worker: route table, D1 store, rest-timer Durable Object |
+| [`worker/migrations/`](worker/migrations) | the D1 schema, applied by `npm run deploy` |
+| [`frontend/`](frontend) | React 19 + Vite (React Router + Zustand); also the Capacitor mobile shells |
+| [`mcp/`](mcp) | optional read-only MCP server, so an LLM client can read your training |
+| [`api/`](api/README.md) | upstream's Node implementation, kept only to diff against. Not deployed |
 
-The full HTTP API is documented as an OpenAPI spec in [`api/openapi.yaml`](api/openapi.yaml) — browsable at [opengym.duarte-santos.ch/api.html](https://opengym.duarte-santos.ch/api.html).
+Configuration — every variable, every secret, and which file it belongs in — is
+**[docs/CONFIG.md](docs/CONFIG.md)**. The full HTTP API is an OpenAPI spec in
+[`api/openapi.yaml`](api/openapi.yaml), rendered in [docs/API.md](docs/API.md).
 
 ## Your data
 
-Lives in `./data` on your host: `db.json` (profiles + public passkeys), `state-<user>.json`
-(each user's plan, workouts, body weight, settings), `audit.log` (the admin activity log — sign-ins
-and admin actions, no IP addresses unless you ask for them) and `secret` (the session-cookie key).
-**Back up `./data` and you've backed up everything.** Passkey private keys never touch the
-server — they stay in your phone's secure hardware / your password manager.
+Lives in **your own D1 database**, on your own Cloudflare account: profiles and public passkeys,
+each user's plan, workouts, body weight and settings, and the admin activity log (sign-ins and
+admin actions, no IP addresses unless you ask for them). Nothing is shared with this repo's
+author or with anyone else, and there is no telemetry to turn off.
+
+**Back up that database and you've backed up everything** —
+`npx wrangler d1 export DB --remote --output opengym.sql`. Passkey private keys never touch the
+server at all; they stay in your phone's secure hardware or your password manager.
+
+Upstream stores the same things as JSON files under `./data`. The mapping between the two is in
+[worker/README.md](worker/README.md#how-it-works).
 
 ## Configuration
 
-Non-secret settings live in `vars` in [`worker/wrangler.jsonc`](worker/wrangler.jsonc). The
-port and proxy variables the Docker stack needed (`WEB_PORT`, `NGINX_PORT`, `BACKEND`, `PORT`)
-have no meaning here — one Worker serves both halves, so there is nothing to proxy.
+Everything openGym reads lives in one of three places, and **[docs/CONFIG.md](docs/CONFIG.md)**
+is the full reference:
 
-| Variable      | What it is                                           | Default                 |
-|---------------|------------------------------------------------------|-------------------------|
-| `RP_ID`       | Hostname passkeys are bound to — **changing it invalidates every passkey** | `localhost` |
-| `ORIGIN`      | Full URL the app is served from                      | `http://localhost:8787` |
-| `RP_NAME`     | Name shown in the passkey prompt                     | `openGym`               |
-| `SESSION_DAYS`| How long a sign-in lasts, in days                    | `90`                    |
-| `ADMIN_UIDS`  | User ids that get the admin dashboard (comma-separated) | *(none)*             |
-| `INVITE_ONLY` | Require an invite code to create a profile           | *(off)*                 |
-| `ALLOW_GUEST` | Offer "Continue without account" — set `0` to require a profile | *(on)*       |
-| `AUDIT_LOG`   | Record sign-ins and admin actions — set `0` to record nothing | *(on)*        |
-| `AUDIT_MAX`   | Events kept in the activity log; `0` for no limit    | `5000`                  |
-| `AUDIT_DAYS`  | Days kept in the activity log; `0` to keep until `AUDIT_MAX` | `90`            |
-| `AUDIT_IP`    | Record the caller's address: `off`, `net` (network only) or `full` | `off`     |
-| `VAPID_SUBJECT` | Contact URL sent with push notifications           | your `ORIGIN`           |
+| | Where | In git |
+| --- | --- | --- |
+| **Generic config** — bindings, cron, compatibility date | [`wrangler.jsonc`](wrangler.jsonc) | yes |
+| **This deployment** — hostname, database, policy choices | [`instance.jsonc`](instance.jsonc) | yes |
+| **Secrets** — `SESSION_SECRET`, the VAPID pair, `ADMIN_UIDS` | `wrangler secret put` | **no** |
 
-Four values are **secrets**, not vars, and are set once with `wrangler secret put`:
-`SESSION_SECRET` (signs session cookies), `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (web push),
-and `ADMIN_UIDS`. The original stack generated the first three into `./data` on first boot; there
-is no filesystem here, so they are created up front — see
-[worker/README.md](worker/README.md#deploy). Cloudflare stores secrets write-only and cannot show
-them to you again, so keep a copy: losing `SESSION_SECRET` signs everyone out, and losing the
-VAPID pair kills every push subscription.
+`wrangler.jsonc` deliberately says nothing about any particular instance — that is what makes the
+Deploy button above work for a stranger — so **if you fork this, `instance.jsonc` is the one file
+you edit.** `npm run deploy:instance` merges it over the generic config and deploys the result;
+`npm run deploy` ignores it.
+
+The port and proxy variables the Docker stack needed (`PORT`, `WEB_PORT`, `NGINX_PORT`,
+`BACKEND`) have no meaning here — one Worker serves both halves, so there is nothing to proxy.
 
 ## Roadmap
 

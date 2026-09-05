@@ -1,0 +1,67 @@
+{
+  // ---------------------------------------------------------------------------------------
+  // This deployment, and nothing else.
+  //
+  // Everything specific to one instance of openGym lives in this file: the hostname passkeys
+  // are bound to, the database that holds its users, and the policy choices its operator made.
+  // wrangler.jsonc stays generic so the Deploy button in the README works for a stranger.
+  //
+  //   npm run deploy            deploys wrangler.jsonc as-is, ignoring this file
+  //   npm run deploy:instance   merges this file over wrangler.jsonc, then deploys that
+  //
+  // The merge is a deep merge: objects combine key by key, arrays and scalars replace outright.
+  // It writes wrangler.instance.json (gitignored) and deploys with `-c`.
+  //
+  // If you forked this repo, this is the one file you have to edit. Nothing in it is a secret —
+  // SESSION_SECRET, the VAPID pair and ADMIN_UIDS are `wrangler secret put`, never a file.
+  //
+  // ARRIVED VIA THE DEPLOY TO CLOUDFLARE BUTTON? Then this file came along with the clone and is
+  // NOT being used: the button's deploy command is `npm run deploy`, which reads wrangler.jsonc
+  // alone. Either set your values in wrangler.jsonc's `vars` and ignore this file, or replace the
+  // values below and change your Worker's deploy command to `npm run deploy:instance`.
+  //
+  // See docs/CONFIG.md for what every key means.
+  // ---------------------------------------------------------------------------------------
+
+  "name": "opengym",
+
+  // Attaches the custom domain and creates the DNS record at deploy time. Must match RP_ID.
+  // Delete this block to deploy to *.workers.dev instead — fine for a look, not for passkeys
+  // you intend to keep, because workers.dev is on the Public Suffix List (worker/README.md).
+  "routes": [
+    { "pattern": "opengym.rcn.sh", "custom_domain": true }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opengym",
+      "database_id": "95de5971-bed3-49de-96a4-5d46b4b9f884",
+      "migrations_dir": "./worker/migrations"
+    }
+  ],
+
+  "vars": {
+    // Changing RP_ID invalidates every passkey ever registered here. It is not a setting so
+    // much as a commitment.
+    "RP_ID": "opengym.rcn.sh",
+    "ORIGIN": "https://opengym.rcn.sh",
+    "RP_NAME": "openGym",
+
+    // A private instance: no open signup, no guest mode, sign-ins last a quarter.
+    "INVITE_ONLY": "1",
+    "ALLOW_GUEST": "0",
+    "SESSION_DAYS": "90",
+
+    // Keep the activity log forever, capped at 5000 events, recording the caller's network
+    // rather than their full address.
+    "AUDIT_LOG": "1",
+    "AUDIT_IP": "net",
+    "AUDIT_MAX": "5000",
+    "AUDIT_DAYS": "0"
+
+    // ADMIN_UIDS is deliberately absent: it is set with `wrangler secret put ADMIN_UIDS`.
+    // It is not a credential — a uid is useless without the matching passkey — but this repo is
+    // public, and naming the admin account in it only tells someone which account to go after.
+  }
+}

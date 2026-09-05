@@ -1,5 +1,65 @@
 {
+  "name": "opengym",
+  "private": true,
+  "version": "1.2.14",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm --prefix frontend ci && npm --prefix frontend run build:cloudflare",
+    "config": "node scripts/wrangler-instance.mjs",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy:instance": "npm run config && wrangler d1 migrations apply DB --remote -c wrangler.instance.json && wrangler deploy -c wrangler.instance.json",
+    "upload:instance": "npm run config && wrangler versions upload -c wrangler.instance.json",
+    "test": "node --test scripts/*.test.mjs worker/test/*.test.js",
+    "test:smoke": "node worker/test/smoke.mjs",
+    "size": "wrangler deploy --dry-run --outdir=.build"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.3",
+    "web-push": "^3.6.7"
+  },
   "devDependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "wrangler": "^4.128.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260903.1": true
+  },
+  "cloudflare": {
+    "label": "openGym",
+    "products": [
+      "Workers",
+      "D1",
+      "Durable Objects"
+    ],
+    "categories": [
+      "Fullstack"
+    ],
+    "docs_url": "https://github.com/rcnsh/opengym/blob/main/worker/README.md",
+    "bindings": {
+      "DB": {
+        "description": "Stores profiles, passkey public keys, workouts and body weight. Everything openGym knows about you lives here — **back it up**."
+      },
+      "RP_ID": {
+        "description": "The bare hostname passkeys are bound to, e.g. `gym.example.com` — no scheme, no path. **Changing it later invalidates every passkey already registered.** A `*.workers.dev` hostname works for a look but cannot be moved off later ([why](https://github.com/rcnsh/opengym/blob/main/worker/README.md#why-you-need-a-domain))."
+      },
+      "ORIGIN": {
+        "description": "The full URL the app is served from, e.g. `https://gym.example.com` — same host as `RP_ID`, with the scheme and no trailing slash."
+      },
+      "SESSION_SECRET": {
+        "description": "Signs session cookies. Generate one with `openssl rand -hex 32`. Losing it signs everyone out; it is never shown again, so keep a copy."
+      },
+      "VAPID_PUBLIC_KEY": {
+        "description": "Public half of the Web Push key pair, for rest-timer alerts and workout reminders. Generate both halves with `npx web-push generate-vapid-keys`. Leave blank to run without push."
+      },
+      "VAPID_PRIVATE_KEY": {
+        "description": "Private half of the same pair. Losing it kills every existing push subscription."
+      },
+      "ADMIN_UIDS": {
+        "description": "Comma-separated user ids that get the admin dashboard. Leave blank — you cannot know your own id until you have registered. Set it afterwards; see [Create the first account](https://github.com/rcnsh/opengym/blob/main/worker/README.md#create-the-first-account)."
+      }
+    }
   }
 }
