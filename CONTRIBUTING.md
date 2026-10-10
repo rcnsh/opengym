@@ -3,6 +3,19 @@
 Thanks for taking a look! openGym is intentionally small and dependency-light, and the goal is
 to keep it that way — easy to read, easy to self-host.
 
+## Where changes go
+
+This repository is a Cloudflare port of [upstream openGym](https://gitlab.com/DuarteSantos8/opengym).
+
+| Change | Send it to |
+| --- | --- |
+| The app itself: frontend, training logic in `frontend/src/lib`, exercise data, translations, `api/server.js`, `mcp/` file backend | [Upstream on GitLab](https://gitlab.com/DuarteSantos8/opengym/-/merge_requests); this fork pulls upstream releases |
+| The Cloudflare port: `worker/`, `wrangler.jsonc`, `instance.jsonc`, `scripts/wrangler-instance.mjs`, the `mcp/` remote (`OPENGYM_URL`) backend, deployment docs | [A pull request here](https://github.com/rcnsh/opengym/pulls) |
+| A bug that only happens on the Worker deployment | [An issue here](https://github.com/rcnsh/opengym/issues) |
+
+If an upstream API change needs porting, the handler in `worker/src/index.js` is changed here by
+hand; see [ARCHITECTURE.md](ARCHITECTURE.md#keeping-in-step-with-upstream).
+
 ## Project layout
 
 ```
@@ -39,6 +52,7 @@ own tests (`npm test` and `npm run test:smoke`) and its own CI workflow.
 ```bash
 # the Worker, locally (miniflare + a local D1). Secrets go in .dev.vars — copy .dev.vars.example.
 npm install
+npm run build                     # the Worker serves frontend/dist, so it must exist
 npx wrangler d1 migrations apply DB --local
 npm run dev                       # http://localhost:8787
 
@@ -46,6 +60,21 @@ npm run dev                       # http://localhost:8787
 cd frontend && npm install && API_TARGET=http://127.0.0.1:8787 npm run dev
 # training logic (progression rules, 1RM, how a session is read back):
 cd frontend && npm test
+```
+
+Passkey verification checks the page origin against `ORIGIN`. To sign in through the Vite dev
+server rather than on :8787, set `ORIGIN` in `.dev.vars` to the Vite URL (default
+`http://localhost:5173`).
+
+Tests, matching CI (`.github/workflows/test.yml` and `worker.yml`):
+
+```bash
+npm test                                   # Worker units + config merge
+npm run test:smoke                         # needs `npm run dev`; setup in worker/README.md
+cd frontend && npm test && npm run build
+cd frontend && node scripts/check-locales.mjs && node scripts/check-source-strings.mjs
+cd frontend && npm run test:fatigue-probe
+cd mcp && npm test && npm run check:node-loadable
 ```
 
 ## Guidelines
@@ -80,6 +109,10 @@ cd frontend && npm test
 | An idea you're not sure about yet | [An issue labelled `idea`](https://gitlab.com/DuarteSantos8/opengym/-/issues) |
 | A reproducible bug | [Issues](https://gitlab.com/DuarteSantos8/opengym/-/issues) |
 | A change you've already built | A merge request |
+| Anything specific to the Cloudflare deployment | [This fork's issues](https://github.com/rcnsh/opengym/issues) |
+
+The rows above that point at GitLab are upstream's channels, for the app itself. Problems with the
+Worker, D1, Wrangler config or deploys are this fork's, not upstream's.
 
 GitLab has no Discussions, so questions and ideas are issues too — just labelled, so nobody
 mistakes a question for agreed-on work. An answered question is worth more than the same answer

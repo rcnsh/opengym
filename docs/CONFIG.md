@@ -58,9 +58,9 @@ you have accepted the default for.
 | `ALLOW_GUEST` | Offer "Continue without account" — `0` to require a profile | on |
 | `AUDIT_LOG` | Record sign-ins and admin actions — `0` to record nothing | on |
 | `AUDIT_MAX` | Events kept in the activity log; `0` for no limit | `5000` |
-| `AUDIT_DAYS` | Days kept in the activity log; `0` to keep until `AUDIT_MAX` | `90` |
+| `AUDIT_DAYS` | Days kept in the activity log; `0` to keep until `AUDIT_MAX` | `0` (upstream: `90`) |
 | `AUDIT_IP` | Record the caller's address: `off`, `net` (network only) or `full` | `net` |
-| `VAPID_SUBJECT` | Contact URL sent with push notifications | your `ORIGIN` |
+| `VAPID_SUBJECT` | Contact URL sent with push notifications | your `ORIGIN` if it is HTTPS, else `mailto:admin@localhost` |
 
 `RP_ID`, `ORIGIN` and the hostname you actually serve from must all agree. If they do not, every
 passkey ceremony fails with an origin mismatch — the single most common self-hosting failure.
