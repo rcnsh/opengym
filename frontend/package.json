@@ -31,9 +31,9 @@
     "@capacitor/cli": "^7.6.9",
     "@capacitor/ios": "^7.6.9",
     "@vitejs/plugin-react": "^6.1.1",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.1",
     "linkedom": "^0.18.13",
     "vite": "^8.3.1",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   }
 }
