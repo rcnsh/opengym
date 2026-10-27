@@ -14,7 +14,7 @@ import {
 } from '@simplewebauthn/server'
 import crypto from 'node:crypto'
 import { Store } from './store.js'
-import { config, heartbeat, sendPush } from './runtime.js'
+import { config, sendPush } from './runtime.js'
 // Imported from the upstream tree rather than copied: both are pure, dependency-free ESM, so they
 // stay on the rebase path and the two runtimes can never disagree about wording or error text.
 import { dayReminderPush, restTimerPush, testPush } from './push-messages.js'
@@ -871,9 +871,5 @@ export default {
     if (new Date().getUTCMinutes() === 0 && cfg.AUDIT_ON) {
       await store.compactAudit(cfg.AUDIT_MAX, cfg.AUDIT_DAYS)
     }
-
-    // Last on purpose: a run that throws or hangs before here sends nothing, which is what the
-    // check watches for.
-    await heartbeat(cfg)
   }
 }

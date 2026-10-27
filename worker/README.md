@@ -104,10 +104,6 @@ node -e "const k=require('web-push').generateVAPIDKeys();console.log(k.publicKey
 Feed the first printed line to `npx wrangler secret put VAPID_PUBLIC_KEY` and the second to
 `npx wrangler secret put VAPID_PRIVATE_KEY`.
 
-Optionally, `npx wrangler secret put HEARTBEAT_URL` with a dead-man's-switch URL (a healthchecks.io
-check on `* * * * *`, for example). The cron pings it at the end of every run, so you hear about a
-cron that has stopped — its errors are otherwise only logged. See [docs/CONFIG.md](../docs/CONFIG.md#secrets).
-
 **5. Build the frontend**
 
 ```bash

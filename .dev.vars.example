@@ -18,11 +18,6 @@ VAPID_PRIVATE_KEY=""
 # the repo so a reader cannot tell which account is worth attacking.
 ADMIN_UIDS=""
 
-# Optional. A URL the cron pings (GET) at the end of every successful run, e.g. a healthchecks.io
-# check with a `* * * * *` schedule. The cron's errors are only logged, so without this a cron that
-# stops running goes unnoticed. Leave it unset to send nothing.
-# HEARTBEAT_URL=""
-
 # .dev.vars also overrides anything in `vars` for `wrangler dev`, which is how local development
 # picks up settings the generic wrangler.jsonc deliberately leaves at their defaults. The smoke
 # test in worker/test/ needs invite-only on to exercise the invite paths:

@@ -108,7 +108,6 @@ Set in `vars`. Defaults are in [`worker/src/runtime.js`](worker/src/runtime.js).
 | `VAPID_PUBLIC_KEY` | no | Web Push key pair (`npx web-push generate-vapid-keys`). Leave both unset to run without push |
 | `VAPID_PRIVATE_KEY` | no | Losing the pair breaks every push subscription |
 | `ADMIN_UIDS` | no | Comma-separated user ids with the admin dashboard. Read per request |
-| `HEARTBEAT_URL` | no | Pinged at the end of every cron run (e.g. healthchecks.io), so a stalled cron is noticed |
 
 Cloudflare cannot show a secret again after it is set. Keep a copy.
 
