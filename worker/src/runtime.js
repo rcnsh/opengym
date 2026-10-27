@@ -15,7 +15,6 @@ export function config(env) {
     RP_ID: env.RP_ID || 'localhost',
     ORIGIN,
     RP_NAME: env.RP_NAME || 'openGym',
-    HEARTBEAT_URL: env.HEARTBEAT_URL || '',
     ADMIN_UIDS: String(env.ADMIN_UIDS || '')
       .split(',')
       .map(s => s.trim())
@@ -38,19 +37,6 @@ export function config(env) {
     AUDIT_MAX: Number.isFinite(auditMax) ? auditMax : 5000,
     AUDIT_DAYS: Number.isFinite(auditDays) ? auditDays : 0,
     AUDIT_IP: ['off', 'net', 'full'].includes(env.AUDIT_IP) ? env.AUDIT_IP : 'net'
-  }
-}
-
-// The cron's failures are only logged, so a cron that stops running, or throws before it finishes,
-// is silent. A dead-man's-switch check (healthchecks.io or similar) alerts when this ping stops
-// arriving. Optional: with HEARTBEAT_URL unset it does nothing. A failed ping is logged, never
-// thrown, so monitoring can't break the run it is watching.
-export async function heartbeat(cfg) {
-  if (!cfg.HEARTBEAT_URL) return
-  try {
-    await fetch(cfg.HEARTBEAT_URL, { signal: AbortSignal.timeout(10_000) })
-  } catch (e) {
-    console.error('cron heartbeat failed', e.message)
   }
 }
 

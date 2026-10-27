@@ -70,8 +70,7 @@ The port and proxy variables the old Docker stack needed (`PORT`, `WEB_PORT`, `N
 
 ## Secrets
 
-Four values (five, with the optional heartbeat) never appear in any file in this repository. Set
-each once:
+Four values never appear in any file in this repository. Set each once:
 
 ```bash
 npx wrangler secret put SESSION_SECRET
@@ -83,7 +82,6 @@ npx wrangler secret put SESSION_SECRET
 | `VAPID_PUBLIC_KEY` | Web Push key pair, generated with | every push subscription dies |
 | `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` | — |
 | `ADMIN_UIDS` | Comma-separated uids with the admin dashboard | nobody can administer the instance |
-| `HEARTBEAT_URL` | Optional. Pinged at the end of every cron run | no alert when the cron stops |
 
 Upstream generates the first three into `./data` on first boot. There is no filesystem here, so
 they are created up front — and **Cloudflare stores secrets write-only and cannot show them to
@@ -93,13 +91,7 @@ you again**, so keep a copy off the machine that made them.
 useless without the matching passkey, but naming the admin account tells a reader which one to go
 after. It is read per request, so setting it needs no redeploy.
 
-`HEARTBEAT_URL` is optional and only for uptime monitoring. The cron logs its errors and carries
-on, so nothing else notices when it stops running. Point this at a dead-man's-switch check (a
-healthchecks.io check on `* * * * *`, say) and the Worker sends it a GET as the last step of each
-run; a run that throws or hangs never pings, and the check alerts. Unset, nothing is sent. It is a
-secret because the URL alone is enough to ping the check.
-
-For local development the same values go in `.dev.vars` (gitignored) — copy
+For local development the same four go in `.dev.vars` (gitignored) — copy
 [`.dev.vars.example`](../.dev.vars.example) and fill it in. Set `RP_ID=localhost` and
 `ORIGIN=http://localhost:8787` there too; passkeys work over plain HTTP on localhost and nowhere
 else.
